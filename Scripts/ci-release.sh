@@ -23,7 +23,7 @@ done
 
 export GH_TOKEN="$RELEASE_REPO_TOKEN"
 SOURCE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
-LATEST_TAG="$(gh api "repos/$RELEASE_REPO/releases/latest" --jq .tag_name 2>/dev/null || true)"
+LATEST_TAG="$(gh release list --repo "$RELEASE_REPO" --limit 1 --json tagName --jq '.[0].tagName // ""')"
 LATEST_VERSION="${LATEST_TAG#v}"
 
 typeset -a source_parts latest_parts
