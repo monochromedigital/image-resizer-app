@@ -32,3 +32,13 @@ swift run ImageResizer
 ```
 
 The packaging script creates `dist/Image Resizer.app` and an unsigned Apple Silicon `dist/Image Resizer.dmg`.
+
+## Release
+
+Source remains private. Versioned DMGs and SHA-256 checksums are published through the public [Image Resizer Releases](https://github.com/johnny-bm/image-resizer-releases) repository.
+
+```sh
+./Scripts/release.sh 0.1.1
+```
+
+See [RELEASING.md](RELEASING.md) for validation, versioning, installation, and recovery details.
