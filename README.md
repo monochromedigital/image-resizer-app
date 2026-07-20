@@ -13,9 +13,12 @@ A native Apple Silicon macOS app for resizing large batches of images while pres
 - Preserve metadata while removing GPS location data by default.
 - Recreate source subfolders inside a sibling `Folder - Resized` output folder.
 - Pause, resume, cancel, saved presets, remembered settings, and collision-safe filenames.
+- Automatic update checks plus a manual **Check for Updates…** command.
 - RAW sources fall back to JPEG when “Keep Original” is selected.
 
 Animated WebP writing uses the bundled Google libwebp 1.6.0 command-line codec under its BSD-style license. With location removal enabled, WebP EXIF/XMP metadata is omitted to ensure embedded location fields are not retained; ICC color profiles are preserved.
+
+Updates use Sparkle 2 under its permissive open-source license. Release archives are cryptographically signed, and the public feed contains no application source.
 
 ## Develop
 
@@ -35,7 +38,7 @@ The packaging script creates `dist/Image Resizer.app` and an unsigned Apple Sili
 
 ## Release
 
-Source remains private. Versioned DMGs and SHA-256 checksums are published through the public [Image Resizer Releases](https://github.com/johnny-bm/image-resizer-releases) repository.
+Source remains private. Versioned DMGs, SHA-256 checksums, and the Sparkle appcast are published through the public [Image Resizer Releases](https://github.com/johnny-bm/image-resizer-releases) repository.
 
 ```sh
 ./Scripts/release.sh 0.1.1

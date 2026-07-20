@@ -8,6 +8,10 @@
 		<data>
 		MzUAuzyiL5AaE+6slNmAMKqO5K4=
 		</data>
+		<key>Resources/Licenses/Sparkle-LICENSE.txt</key>
+		<data>
+		mOjbjtiy4MLeRUA1svgpagNeQGQ=
+		</data>
 		<key>Resources/WebPTools/COPYING</key>
 		<data>
 		Wc2Tj8vWc1se+ReBKA1utsS3xdk=
@@ -31,11 +35,27 @@
 	</dict>
 	<key>files2</key>
 	<dict>
+		<key>Frameworks/Sparkle.framework</key>
+		<dict>
+			<key>cdhash</key>
+			<data>
+			Dmb07QsZy4tS/YBjdAuoDhSBNmo=
+			</data>
+			<key>requirement</key>
+			<string>cdhash H"0e66f4ed0b19cb8b52fd8063740ba80e1481366a" or cdhash H"fd24b696c9ddc522d2a674d2e16e5b52f4daa9d3"</string>
+		</dict>
 		<key>Resources/ImageResizer.icns</key>
 		<dict>
 			<key>hash2</key>
 			<data>
 			Xjc5OJpobVN73eHyDbWAr+Vb8NJZA8yzgJcXVCclf60=
+			</data>
+		</dict>
+		<key>Resources/Licenses/Sparkle-LICENSE.txt</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			OJpOTpoy8Fl3WxOgbiWlkURboinSg40m3T58DEUSfP4=
 			</data>
 		</dict>
 		<key>Resources/WebPTools/COPYING</key>

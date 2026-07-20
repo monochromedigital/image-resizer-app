@@ -7,7 +7,18 @@ let package = Package(
     products: [
         .executable(name: "ImageResizer", targets: ["ImageResizer"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.4")
+    ],
     targets: [
-        .executableTarget(name: "ImageResizer")
+        .executableTarget(
+            name: "ImageResizer",
+            dependencies: [
+                .product(name: "Sparkle", package: "Sparkle")
+            ],
+            linkerSettings: [
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
+            ]
+        )
     ]
 )

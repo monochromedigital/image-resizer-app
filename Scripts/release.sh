@@ -8,6 +8,7 @@ DMG="$ROOT/dist/Image Resizer.dmg"
 SOURCE_REPO="johnny-bm/image-resizer"
 RELEASE_REPO="johnny-bm/image-resizer-releases"
 INSTALL_DIR="${IMAGE_RESIZER_INSTALL_DIR:-/Applications}"
+SPARKLE_ACCOUNT="image-resizer"
 
 VERSION=""
 NOTES_FILE=""
@@ -33,9 +34,10 @@ The script:
   1. Validates the repository, version, GitHub access, and clean tracked files.
   2. Increments the build number and runs checks.
   3. Builds and verifies the Apple Silicon app and DMG.
-  4. Commits and tags the private source repository.
-  5. Publishes only the DMG and SHA-256 checksum publicly.
-  6. Replaces the local app in /Applications unless --no-install is used.
+  4. Signs the update and generates the public Sparkle appcast.
+  5. Commits and tags the private source repository.
+  6. Publishes the DMG, checksum, and appcast publicly.
+  7. Replaces the local app in /Applications unless --no-install is used.
 USAGE
 }
 
@@ -78,7 +80,7 @@ done
 [[ "$VERSION" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]] || fail "Version must use X.Y.Z, for example 0.2.0."
 [[ -z "$NOTES_FILE" || -r "$NOTES_FILE" ]] || fail "Release notes file is not readable: $NOTES_FILE"
 
-for command in git gh plutil shasum hdiutil codesign ditto; do
+for command in git gh plutil shasum hdiutil codesign ditto xmllint; do
   command -v "$command" >/dev/null || fail "Required command is missing: $command"
 done
 
@@ -163,6 +165,9 @@ hdiutil verify "$DMG" >/dev/null
 ARTIFACT_DIR="$(mktemp -d -t ImageResizer-release.XXXXXX)"
 PUBLIC_DMG="$ARTIFACT_DIR/ImageResizer.dmg"
 CHECKSUM_FILE="$ARTIFACT_DIR/ImageResizer.dmg.sha256"
+APPCAST_DIR="$ARTIFACT_DIR/appcast"
+PUBLIC_REPO_DIR="$ARTIFACT_DIR/public-repo"
+SPARKLE_TOOLS="$ROOT/.build-release/artifacts/sparkle/Sparkle/bin"
 cp "$DMG" "$PUBLIC_DMG"
 CHECKSUM="$(shasum -a 256 "$PUBLIC_DMG" | awk '{print $1}')"
 print -r -- "$CHECKSUM  ImageResizer.dmg" > "$CHECKSUM_FILE"
@@ -182,6 +187,28 @@ else
   } > "$PUBLISH_NOTES"
 fi
 
+[[ -x "$SPARKLE_TOOLS/generate_appcast" && -x "$SPARKLE_TOOLS/generate_keys" ]] || fail "Sparkle publishing tools are missing."
+EMBEDDED_PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$PLIST")"
+KEYCHAIN_PUBLIC_KEY="$("$SPARKLE_TOOLS/generate_keys" --account "$SPARKLE_ACCOUNT" -p)"
+[[ "$EMBEDDED_PUBLIC_KEY" == "$KEYCHAIN_PUBLIC_KEY" ]] || fail "The Sparkle Keychain key does not match SUPublicEDKey."
+
+print -- "Generating signed Sparkle appcast..."
+gh repo clone "$RELEASE_REPO" "$PUBLIC_REPO_DIR" -- --depth 1 >/dev/null
+mkdir -p "$APPCAST_DIR"
+cp "$PUBLIC_DMG" "$APPCAST_DIR/ImageResizer.dmg"
+cp "$PUBLISH_NOTES" "$APPCAST_DIR/ImageResizer.md"
+[[ ! -f "$PUBLIC_REPO_DIR/appcast.xml" ]] || cp "$PUBLIC_REPO_DIR/appcast.xml" "$APPCAST_DIR/appcast.xml"
+"$SPARKLE_TOOLS/generate_appcast" \
+  --account "$SPARKLE_ACCOUNT" \
+  --download-url-prefix "https://github.com/$RELEASE_REPO/releases/download/$TAG/" \
+  --embed-release-notes \
+  --maximum-versions 3 \
+  -o "$APPCAST_DIR/appcast.xml" \
+  "$APPCAST_DIR"
+xmllint --noout "$APPCAST_DIR/appcast.xml"
+grep -q 'sparkle:edSignature=' "$APPCAST_DIR/appcast.xml" || fail "The appcast update is not signed."
+grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" "$APPCAST_DIR/appcast.xml" || fail "The appcast version is incorrect."
+
 print -- "Committing and tagging private source..."
 git add Resources/Info.plist dist
 git commit -m "Release $TAG"
@@ -197,6 +224,12 @@ gh release create "$TAG" \
   --title "Image Resizer $VERSION" \
   --notes-file "$PUBLISH_NOTES" \
   --latest
+
+print -- "Publishing Sparkle appcast..."
+cp "$APPCAST_DIR/appcast.xml" "$PUBLIC_REPO_DIR/appcast.xml"
+git -C "$PUBLIC_REPO_DIR" add appcast.xml
+git -C "$PUBLIC_REPO_DIR" commit -m "Publish appcast for $TAG"
+git -C "$PUBLIC_REPO_DIR" push origin main
 
 if [[ "$INSTALL_APP" == true ]]; then
   print -- "Installing local app..."
