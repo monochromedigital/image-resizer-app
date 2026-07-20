@@ -2,6 +2,8 @@
 
 A native Apple Silicon macOS app for resizing large batches of images while preserving their folder structure.
 
+![Image Resizer app icon](Resources/AppIcon/ImageResizer-Icon.png)
+
 ## Features
 
 - Drop individual images, folders, or multiple folders.

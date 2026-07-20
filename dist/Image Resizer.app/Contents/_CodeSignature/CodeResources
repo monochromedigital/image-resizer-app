@@ -4,6 +4,10 @@
 <dict>
 	<key>files</key>
 	<dict>
+		<key>Resources/ImageResizer.icns</key>
+		<data>
+		MzUAuzyiL5AaE+6slNmAMKqO5K4=
+		</data>
 		<key>Resources/WebPTools/COPYING</key>
 		<data>
 		Wc2Tj8vWc1se+ReBKA1utsS3xdk=
@@ -27,6 +31,13 @@
 	</dict>
 	<key>files2</key>
 	<dict>
+		<key>Resources/ImageResizer.icns</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			Xjc5OJpobVN73eHyDbWAr+Vb8NJZA8yzgJcXVCclf60=
+			</data>
+		</dict>
 		<key>Resources/WebPTools/COPYING</key>
 		<dict>
 			<key>hash2</key>

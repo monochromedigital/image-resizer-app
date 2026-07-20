@@ -10,6 +10,8 @@
     <string>ImageResizer</string>
     <key>CFBundleIdentifier</key>
     <string>local.imageresizer.app</string>
+    <key>CFBundleIconFile</key>
+    <string>ImageResizer.icns</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
