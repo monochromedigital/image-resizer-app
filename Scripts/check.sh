@@ -2,7 +2,14 @@
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
-SDK="/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk"
+LOCAL_SDK="/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk"
+if [[ -n "${IMAGE_RESIZER_SDK:-}" ]]; then
+  SDK="$IMAGE_RESIZER_SDK"
+elif [[ -d "$LOCAL_SDK" ]]; then
+  SDK="$LOCAL_SDK"
+else
+  SDK="$(xcrun --sdk macosx --show-sdk-path)"
+fi
 MODULE_CACHE="$ROOT/.build-module-cache"
 OUTPUT="$ROOT/.build-checks/ImageResizerChecks"
 

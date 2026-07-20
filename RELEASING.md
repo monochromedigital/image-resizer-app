@@ -12,7 +12,25 @@ The Swift source stays in the private `johnny-bm/image-resizer` repository. Publ
 
 Untracked working files do not block a release and are never uploaded.
 
+## Automatic publishing
+
+Every push to the private repository's `main` branch runs `.github/workflows/release-on-push.yml` on an Apple Silicon GitHub runner. The workflow:
+
+1. Reads the latest version from the public release repository and increments its patch number.
+2. Runs all checks and builds the app and DMG.
+3. Signs the update using the Sparkle key stored as a GitHub Actions secret.
+4. Creates the public release, updates `appcast.xml`, and tags the private source commit.
+
+The workflow requires two private repository secrets:
+
+- `RELEASE_REPO_TOKEN`: a GitHub token allowed to write releases and contents in `johnny-bm/image-resizer-releases`.
+- `SPARKLE_PRIVATE_KEY`: the exported Sparkle private key. GitHub masks this value in logs.
+
+Releases are serialized. If publishing fails before the appcast is updated, the incomplete public release is removed automatically. A push that only changes documentation still creates a new patch release.
+
 ## Publish
+
+The local release script is a manual fallback when GitHub Actions is unavailable:
 
 ```sh
 ./Scripts/release.sh 0.1.1

@@ -2,13 +2,21 @@
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
-SDK="/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk"
+LOCAL_SDK="/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk"
+if [[ -n "${IMAGE_RESIZER_SDK:-}" ]]; then
+  SDK="$IMAGE_RESIZER_SDK"
+elif [[ -d "$LOCAL_SDK" ]]; then
+  SDK="$LOCAL_SDK"
+else
+  SDK="$(xcrun --sdk macosx --show-sdk-path)"
+fi
 SCRATCH="$ROOT/.build-release"
 MODULE_CACHE="$ROOT/.build-module-cache"
 DIST="$ROOT/dist"
 APP="$DIST/Image Resizer.app"
 DMG="$DIST/Image Resizer.dmg"
-SPARKLE_FRAMEWORK="$SCRATCH/arm64-apple-macosx/release/Sparkle.framework"
+BUILD_TRIPLE="$(swift -print-target-info | awk -F'\"' '/\"unversionedTriple\"/ { print $4; exit }')"
+SPARKLE_FRAMEWORK="$SCRATCH/$BUILD_TRIPLE/release/Sparkle.framework"
 SPARKLE_LICENSE="$SCRATCH/artifacts/sparkle/Sparkle/LICENSE"
 
 mkdir -p "$DIST" "$MODULE_CACHE"
@@ -19,7 +27,7 @@ SDKROOT="$SDK" CLANG_MODULE_CACHE_PATH="$MODULE_CACHE" swift build \
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
-install -m 755 "$SCRATCH/arm64-apple-macosx/release/ImageResizer" "$APP/Contents/MacOS/ImageResizer"
+install -m 755 "$SCRATCH/$BUILD_TRIPLE/release/ImageResizer" "$APP/Contents/MacOS/ImageResizer"
 install -m 644 "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 install -m 644 "$ROOT/Resources/AppIcon/ImageResizer.icns" "$APP/Contents/Resources/ImageResizer.icns"
 [[ -d "$SPARKLE_FRAMEWORK" ]] || { print -u2 -- "Missing Sparkle.framework: $SPARKLE_FRAMEWORK"; exit 1; }

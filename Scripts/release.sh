@@ -119,7 +119,8 @@ for index in 1 2 3; do
 done
 [[ "$IS_NEWER" == true ]] || fail "$VERSION must be newer than $CURRENT_VERSION."
 
-NEXT_BUILD=$(( CURRENT_BUILD + 1 ))
+NEXT_BUILD=$(( target_parts[1] * 1000000 + target_parts[2] * 1000 + target_parts[3] ))
+(( NEXT_BUILD > CURRENT_BUILD )) || fail "Calculated build $NEXT_BUILD must be newer than $CURRENT_BUILD."
 print -- "Image Resizer release plan"
 print -- "  Version:       $CURRENT_VERSION ($CURRENT_BUILD) -> $VERSION ($NEXT_BUILD)"
 print -- "  Private source: https://github.com/$SOURCE_REPO"

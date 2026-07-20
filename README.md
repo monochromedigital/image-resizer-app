@@ -40,6 +40,10 @@ The packaging script creates `dist/Image Resizer.app` and an unsigned Apple Sili
 
 Source remains private. Versioned DMGs, SHA-256 checksums, and the Sparkle appcast are published through the public [Image Resizer Releases](https://github.com/johnny-bm/image-resizer-releases) repository.
 
+Every push to `main` runs the private repository's GitHub Actions release workflow. After checks pass, it assigns the next patch version, publishes the signed update, and refreshes the Sparkle feed. For example, if the latest public release is `0.1.1`, the next push publishes `0.1.2`.
+
+The local script remains available as a manual fallback:
+
 ```sh
 ./Scripts/release.sh 0.1.1
 ```
