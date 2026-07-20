@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var isDropTargeted = false
     @State private var presetName = ""
     @State private var showingPresetPrompt = false
+    @State private var selectedSources = Set<URL>()
 
     var body: some View {
         NavigationSplitView {
@@ -48,23 +49,41 @@ struct ContentView: View {
 
     private var sourceSidebar: some View {
         VStack(spacing: 0) {
-            List {
+            List(selection: $selectedSources) {
                 Section("Sources") {
                     ForEach(model.sources, id: \.self) { url in
                         Label(url.lastPathComponent, systemImage: sourceIcon(url))
+                            .tag(url)
                             .help(url.path)
+                            .onTapGesture(count: 2) { model.revealSources([url]) }
+                            .contextMenu {
+                                Button("Reveal in Finder") { model.revealSources([url]) }
+                                Divider()
+                                Button("Remove Source", role: .destructive) { model.removeSources([url]) }
+                                    .disabled(model.isProcessing)
+                            }
                     }
                     .onDelete(perform: model.removeSources)
                 }
             }
+            .onChange(of: model.sources) { _, sources in
+                selectedSources.formIntersection(sources)
+            }
             HStack {
                 Button(action: model.chooseSources) { Image(systemName: "plus") }
+                    .disabled(model.isProcessing)
                     .help("Add files or folders")
+                Button { model.removeSources(selectedSources) } label: { Image(systemName: "minus") }
+                    .disabled(selectedSources.isEmpty || model.isProcessing)
+                    .help("Remove selected sources")
+                Button { model.revealSources(selectedSources) } label: { Image(systemName: "folder") }
+                    .disabled(selectedSources.isEmpty)
+                    .help("Reveal selected sources in Finder")
                 Button(action: model.clearSources) { Image(systemName: "trash") }
                     .disabled(model.sources.isEmpty || model.isProcessing)
-                    .help("Clear sources")
+                    .help("Clear all sources")
                 Spacer()
-                Text("\(model.sources.count) selected")
+                Text(selectedSources.isEmpty ? "\(model.sources.count) sources" : "\(selectedSources.count) selected")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -84,6 +103,7 @@ struct ContentView: View {
             Text(model.sources.isEmpty ? "Folder structure will be preserved" : "\(model.sources.count) source item\(model.sources.count == 1 ? "" : "s") selected")
                 .foregroundStyle(.secondary)
             Button("Choose Files or Folders…", action: model.chooseSources)
+                .disabled(model.isProcessing)
         }
         .frame(maxWidth: .infinity, minHeight: 150)
         .background(
@@ -126,6 +146,7 @@ struct ContentView: View {
             }
             .padding(8)
         }
+        .disabled(model.isProcessing)
     }
 
     private var outputSection: some View {
@@ -171,6 +192,7 @@ struct ContentView: View {
             }
             .padding(8)
         }
+        .disabled(model.isProcessing)
     }
 
     private var metadataSection: some View {
@@ -186,6 +208,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
         }
+        .disabled(model.isProcessing)
     }
 
     private var actionBar: some View {

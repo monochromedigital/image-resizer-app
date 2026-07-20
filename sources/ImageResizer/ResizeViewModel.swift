@@ -25,12 +25,14 @@ final class ResizeViewModel: ObservableObject {
     var canResize: Bool { !sources.isEmpty && store.settings.isValid && !isProcessing }
 
     func addSources(_ urls: [URL]) {
+        guard !isProcessing else { return }
         let normalized = urls.map(\.standardizedFileURL)
         for url in normalized where !sources.contains(url) { sources.append(url) }
         result = nil
     }
 
     func chooseSources() {
+        guard !isProcessing else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
@@ -40,6 +42,7 @@ final class ResizeViewModel: ObservableObject {
     }
 
     func chooseDestination() {
+        guard !isProcessing else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -52,8 +55,28 @@ final class ResizeViewModel: ObservableObject {
         }
     }
 
-    func removeSources(at offsets: IndexSet) { sources.remove(atOffsets: offsets) }
-    func clearSources() { sources.removeAll(); result = nil }
+    func removeSources(at offsets: IndexSet) {
+        guard !isProcessing else { return }
+        sources.remove(atOffsets: offsets)
+        result = nil
+    }
+
+    func removeSources(_ selectedSources: Set<URL>) {
+        guard !isProcessing else { return }
+        sources.removeAll { selectedSources.contains($0) }
+        result = nil
+    }
+
+    func clearSources() {
+        guard !isProcessing else { return }
+        sources.removeAll()
+        result = nil
+    }
+
+    func revealSources(_ selectedSources: Set<URL>) {
+        guard !selectedSources.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(Array(selectedSources))
+    }
 
     func start() {
         guard canResize else { return }
