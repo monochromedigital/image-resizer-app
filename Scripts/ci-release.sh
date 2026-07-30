@@ -5,7 +5,7 @@ ROOT="${0:A:h:h}"
 PLIST="$ROOT/Resources/Info.plist"
 APP="$ROOT/dist/Image Resizer.app"
 DMG="$ROOT/dist/Image Resizer.dmg"
-RELEASE_REPO="johnny-bm/image-resizer-releases"
+RELEASE_REPO="monochromedigital/image-resizer-releases"
 
 fail() {
   print -u2 -- "Automated release stopped: $*"
@@ -86,7 +86,7 @@ print -r -- "$CHECKSUM  ImageResizer.dmg" > "$CHECKSUM_FILE"
 {
   print -- "Image Resizer $VERSION for Apple Silicon Macs running macOS 14 or newer."
   print -- ""
-  print -- "Built automatically from private source commit \`${GITHUB_SHA:-unknown}\`."
+  print -- "Built automatically from source commit \`${GITHUB_SHA:-unknown}\`."
   print -- ""
   print -- "Download \`ImageResizer.dmg\`, open it, and drag Image Resizer into Applications."
   print -- ""

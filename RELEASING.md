@@ -1,12 +1,12 @@
 # Releasing Image Resizer
 
-The Swift source stays in the private `johnny-bm/image-resizer` repository. Public binaries and checksums are published to [`johnny-bm/image-resizer-releases`](https://github.com/johnny-bm/image-resizer-releases).
+The Swift source is hosted in [`monochromedigital/image-resizer`](https://github.com/monochromedigital/image-resizer). Public binaries and checksums are published to [`monochromedigital/image-resizer-releases`](https://github.com/monochromedigital/image-resizer-releases).
 
 ## Prerequisites
 
 - Work on the `main` branch with all tracked changes committed and pushed.
-- Authenticate GitHub CLI as `johnny-bm` with `gh auth login -h github.com`.
-- Keep the source repository private and the releases repository public.
+- Authenticate GitHub CLI with an account that can write to both `monochromedigital` repositories.
+- Keep both the source and releases repositories public.
 - Choose a version newer than the value in `Resources/Info.plist`.
 - Keep the Sparkle private key in the login Keychain under the `image-resizer` account.
 
@@ -14,16 +14,16 @@ Untracked working files do not block a release and are never uploaded.
 
 ## Automatic publishing
 
-Every push to the private repository's `main` branch runs `.github/workflows/release-on-push.yml` on an Apple Silicon GitHub runner. The workflow:
+Every push to the source repository's `main` branch runs `.github/workflows/release-on-push.yml` on an Apple Silicon GitHub runner. The workflow:
 
 1. Reads the latest version from the public release repository and increments its patch number.
 2. Runs all checks and builds the app and DMG.
 3. Signs the update using the Sparkle key stored as a GitHub Actions secret.
-4. Creates the public release, updates `appcast.xml`, and tags the private source commit.
+4. Creates the public release, updates `appcast.xml`, and tags the source commit.
 
-The workflow requires two private repository secrets:
+The workflow requires two repository secrets:
 
-- `RELEASE_REPO_TOKEN`: a GitHub token allowed to write releases and contents in `johnny-bm/image-resizer-releases`.
+- `RELEASE_REPO_TOKEN`: a GitHub token allowed to write releases and contents in `monochromedigital/image-resizer-releases`.
 - `SPARKLE_PRIVATE_KEY`: the exported Sparkle private key. GitHub masks this value in logs.
 
 Releases are serialized. If publishing fails before the appcast is updated, the incomplete public release is removed automatically. A push that only changes documentation still creates a new patch release.
@@ -55,7 +55,7 @@ The script pauses for confirmation before changing versions or publishing. It th
 3. Runs sizing, folder, format, animated GIF, and animated WebP checks.
 4. Builds and verifies the app and DMG.
 5. Signs the DMG with the private Sparkle key and generates `appcast.xml`.
-6. Commits and tags the private source repository.
+6. Commits and tags the source repository.
 7. Publishes `ImageResizer.dmg`, its checksum, and the appcast publicly.
 8. Atomically replaces and relaunches the local app.
 
@@ -71,7 +71,7 @@ Every release increments the internal build number automatically.
 
 ## Automatic updates
 
-Sparkle checks the public appcast while all Swift source remains private. Users can also choose **Image Resizer → Check for Updates…**. A release is not offered until its signed DMG exists in the public GitHub release and the matching appcast has been pushed.
+Sparkle checks the public appcast. Users can also choose **Image Resizer → Check for Updates…**. A release is not offered until its signed DMG exists in the public GitHub release and the matching appcast has been pushed.
 
 The signing key is the identity of every future update. Losing it prevents existing installations from accepting new releases. Back it up once to secure offline storage (never inside either repository):
 

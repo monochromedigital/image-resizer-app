@@ -5,8 +5,8 @@ ROOT="${0:A:h:h}"
 PLIST="$ROOT/Resources/Info.plist"
 APP="$ROOT/dist/Image Resizer.app"
 DMG="$ROOT/dist/Image Resizer.dmg"
-SOURCE_REPO="johnny-bm/image-resizer"
-RELEASE_REPO="johnny-bm/image-resizer-releases"
+SOURCE_REPO="monochromedigital/image-resizer"
+RELEASE_REPO="monochromedigital/image-resizer-releases"
 INSTALL_DIR="${IMAGE_RESIZER_INSTALL_DIR:-/Applications}"
 SPARKLE_ACCOUNT="image-resizer"
 
@@ -35,7 +35,7 @@ The script:
   2. Increments the build number and runs checks.
   3. Builds and verifies the Apple Silicon app and DMG.
   4. Signs the update and generates the public Sparkle appcast.
-  5. Commits and tags the private source repository.
+  5. Commits and tags the source repository.
   6. Publishes the DMG, checksum, and appcast publicly.
   7. Replaces the local app in /Applications unless --no-install is used.
 USAGE
@@ -93,7 +93,7 @@ cd "$ROOT"
 gh auth status -h github.com >/dev/null || fail "GitHub CLI authentication is required. Run: gh auth login -h github.com"
 SOURCE_VISIBILITY="$(gh repo view "$SOURCE_REPO" --json visibility --jq .visibility)"
 RELEASE_VISIBILITY="$(gh repo view "$RELEASE_REPO" --json visibility --jq .visibility)"
-[[ "$SOURCE_VISIBILITY" == "PRIVATE" ]] || fail "$SOURCE_REPO must remain private."
+[[ "$SOURCE_VISIBILITY" == "PUBLIC" ]] || fail "$SOURCE_REPO must remain public."
 [[ "$RELEASE_VISIBILITY" == "PUBLIC" ]] || fail "$RELEASE_REPO must be public."
 
 git fetch --quiet origin main --tags
@@ -123,7 +123,7 @@ NEXT_BUILD=$(( target_parts[1] * 1000000 + target_parts[2] * 1000 + target_parts
 (( NEXT_BUILD > CURRENT_BUILD )) || fail "Calculated build $NEXT_BUILD must be newer than $CURRENT_BUILD."
 print -- "Image Resizer release plan"
 print -- "  Version:       $CURRENT_VERSION ($CURRENT_BUILD) -> $VERSION ($NEXT_BUILD)"
-print -- "  Private source: https://github.com/$SOURCE_REPO"
+print -- "  Source:         https://github.com/$SOURCE_REPO"
 print -- "  Public release: https://github.com/$RELEASE_REPO/releases/tag/$TAG"
 print -- "  Local install:  $INSTALL_APP ($INSTALL_DIR/Image Resizer.app)"
 
@@ -184,7 +184,7 @@ else
     print -- ""
     print -- "SHA-256: \`$CHECKSUM\`"
     print -- ""
-    print -- "The source repository is maintained privately."
+    print -- "Source: https://github.com/$SOURCE_REPO"
   } > "$PUBLISH_NOTES"
 fi
 
@@ -210,7 +210,7 @@ xmllint --noout "$APPCAST_DIR/appcast.xml"
 grep -q 'sparkle:edSignature=' "$APPCAST_DIR/appcast.xml" || fail "The appcast update is not signed."
 grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" "$APPCAST_DIR/appcast.xml" || fail "The appcast version is incorrect."
 
-print -- "Committing and tagging private source..."
+print -- "Committing and tagging source..."
 git add Resources/Info.plist dist
 git commit -m "Release $TAG"
 git tag -a "$TAG" -m "Image Resizer $VERSION"
