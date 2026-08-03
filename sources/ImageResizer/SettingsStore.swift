@@ -8,6 +8,7 @@ final class SettingsStore: ObservableObject {
     @Published var longEdgeText: String { didSet { save() } }
     @Published var percentageText: String { didSet { save() } }
     @Published var preventEnlargement: Bool { didSet { save() } }
+    @Published var filenameSuffix: String { didSet { save() } }
     @Published var format: OutputFormat { didSet { save() } }
     @Published var quality: Double { didSet { save() } }
     @Published var preserveMetadata: Bool { didSet { save() } }
@@ -30,6 +31,7 @@ final class SettingsStore: ObservableObject {
         longEdgeText = defaults.string(forKey: "longEdge") ?? "2048"
         percentageText = defaults.string(forKey: "percentage") ?? "50"
         preventEnlargement = defaults.object(forKey: "preventEnlargement") as? Bool ?? true
+        filenameSuffix = defaults.string(forKey: "filenameSuffix") ?? "-resized"
         format = OutputFormat(rawValue: defaults.string(forKey: "format") ?? "") ?? .original
         quality = defaults.object(forKey: "quality") as? Double ?? 0.9
         preserveMetadata = defaults.object(forKey: "preserveMetadata") as? Bool ?? true
@@ -60,6 +62,7 @@ final class SettingsStore: ObservableObject {
             longEdge: positiveInt(longEdgeText),
             percentage: positiveInt(percentageText),
             preventEnlargement: preventEnlargement,
+            filenameSuffix: filenameSuffix,
             format: format,
             quality: quality,
             preserveMetadata: preserveMetadata,
@@ -98,6 +101,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(longEdgeText, forKey: "longEdge")
         defaults.set(percentageText, forKey: "percentage")
         defaults.set(preventEnlargement, forKey: "preventEnlargement")
+        defaults.set(filenameSuffix, forKey: "filenameSuffix")
         defaults.set(format.rawValue, forKey: "format")
         defaults.set(quality, forKey: "quality")
         defaults.set(preserveMetadata, forKey: "preserveMetadata")

@@ -21,6 +21,7 @@ struct IntegrationChecks {
             longEdge: nil,
             percentage: nil,
             preventEnlargement: true,
+            filenameSuffix: "-resized",
             format: .jpeg,
             quality: 0.9,
             preserveMetadata: true,
@@ -38,18 +39,28 @@ struct IntegrationChecks {
         precondition(jobs[0].destination.path.contains("Source - Resized/Trips/landscape.png"))
 
         let first = try ResizeEngine.resize(job: jobs[0], settings: settings)
-        precondition(first.lastPathComponent == "landscape.jpg")
+        precondition(first.lastPathComponent == "landscape-resized.jpg")
         try checkDimensions(first, width: 320, height: 180)
 
         let second = try ResizeEngine.resize(job: jobs[0], settings: settings)
-        precondition(second.lastPathComponent == "landscape-2.jpg")
+        precondition(second.lastPathComponent == "landscape-resized-2.jpg")
         try checkDimensions(second, width: 320, height: 180)
 
         let smallInput = nested.appendingPathComponent("small.png")
         try makePNG(at: smallInput, width: 80, height: 40, red: 0.25, green: 0.7, blue: 0.35)
         let smallJob = ResizeJob(source: smallInput, destination: outputs[0].appendingPathComponent("Trips/small.png"))
         let protected = try ResizeEngine.resize(job: smallJob, settings: settings)
+        precondition(protected.lastPathComponent == "small-resized.jpg")
         try checkDimensions(protected, width: 80, height: 40)
+
+        var blankSuffixSettings = settings
+        blankSuffixSettings.filenameSuffix = ""
+        let blankSuffix = try ResizeEngine.resize(
+            job: ResizeJob(source: smallInput, destination: outputs[0].appendingPathComponent("Trips/blank.png")),
+            settings: blankSuffixSettings
+        )
+        precondition(blankSuffix.lastPathComponent == "blank.jpg")
+        try checkDimensions(blankSuffix, width: 80, height: 40)
 
         var enlargementSettings = settings
         enlargementSettings.preventEnlargement = false
@@ -85,7 +96,7 @@ struct IntegrationChecks {
         var webPSettings = settings
         webPSettings.format = .webp
         let webP = try ResizeEngine.resize(job: jobs[0], settings: webPSettings)
-        precondition(webP.pathExtension == "webp")
+        precondition(webP.lastPathComponent == "landscape-resized.webp")
         try checkDimensions(webP, width: 320, height: 180)
         guard let webPSource = CGImageSourceCreateWithURL(webP as CFURL, nil) else {
             preconditionFailure("WebP output is unreadable")
@@ -141,7 +152,7 @@ struct IntegrationChecks {
             )
             try checkDimensions(rawOutput, width: 800, height: 1199)
             try checkImageIsNotBlack(rawOutput)
-            precondition(rawOutput.pathExtension == "jpg")
+            precondition(rawOutput.lastPathComponent == "\(rawInput.deletingPathExtension().lastPathComponent)-resized.jpg")
 
             var rawFillSettings = rawSettings
             rawFillSettings.mode = .fill
@@ -162,11 +173,11 @@ struct IntegrationChecks {
             )
             try checkDimensions(rawWebPOutput, width: 800, height: 1199)
             try checkImageIsNotBlack(rawWebPOutput)
-            precondition(rawWebPOutput.pathExtension == "webp")
+            precondition(rawWebPOutput.lastPathComponent == "\(rawInput.deletingPathExtension().lastPathComponent)-resized.webp")
             print("Optional camera RAW fixture check passed.")
         }
 
-        print("Image round-trip, resize modes, no-enlargement, collision, WebP, animated WebP, animated GIF, and RAW-path checks passed.")
+        print("Image round-trip, filename suffix, resize modes, no-enlargement, collision, WebP, animated WebP, animated GIF, and RAW-path checks passed.")
     }
 
     static func makePNG(at url: URL, width: Int, height: Int, red: CGFloat, green: CGFloat, blue: CGFloat) throws {

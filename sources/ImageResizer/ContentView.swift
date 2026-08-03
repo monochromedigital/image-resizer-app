@@ -199,6 +199,17 @@ struct ContentView: View {
                     ColorPicker("Transparency background", selection: backgroundBinding, supportsOpacity: false)
                 }
 
+                HStack {
+                    Text("Filename suffix")
+                    TextField("-resized", text: binding(\.filenameSuffix))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 220)
+                    Spacer()
+                }
+                Text("Added before the file extension. Leave empty to keep the original filename.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Toggle("Use a custom destination", isOn: binding(\.useCustomDestination))
                 if model.store.useCustomDestination {
                     HStack {

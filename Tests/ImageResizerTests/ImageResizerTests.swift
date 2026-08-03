@@ -18,6 +18,7 @@ struct ImageResizerTests {
             longEdge: longEdge,
             percentage: percentage,
             preventEnlargement: preventEnlargement,
+            filenameSuffix: "-resized",
             format: .jpeg,
             quality: 0.9,
             preserveMetadata: true,
@@ -93,5 +94,15 @@ struct ImageResizerTests {
         let root = URL(fileURLWithPath: "/Photos")
         let file = URL(fileURLWithPath: "/Photos/Trips/Paris/image.jpg")
         #expect(JobPlanner.relativePath(of: file, beneath: root) == "Trips/Paris/image.jpg")
+    }
+
+    @Test func outputFilenameUsesSuffixAndFormatExtension() {
+        let job = ResizeJob(
+            source: URL(fileURLWithPath: "/Photos/image.png"),
+            destination: URL(fileURLWithPath: "/Exports/image.png")
+        )
+        #expect(job.requestedOutputURL(extension: "jpg", filenameSuffix: "-resized").lastPathComponent == "image-resized.jpg")
+        #expect(job.requestedOutputURL(extension: "jpg", filenameSuffix: "").lastPathComponent == "image.jpg")
+        #expect(job.requestedOutputURL(extension: "jpg", filenameSuffix: "/web:\n").lastPathComponent == "image-web--.jpg")
     }
 }

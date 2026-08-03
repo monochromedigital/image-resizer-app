@@ -104,9 +104,10 @@ struct ResizeEngine {
         }
 
         let outputExtension = extensionFor(type: requestedType, fallback: job.source.pathExtension)
-        let requestedURL = job.destination
-            .deletingPathExtension()
-            .appendingPathExtension(outputExtension)
+        let requestedURL = job.requestedOutputURL(
+            extension: outputExtension,
+            filenameSuffix: settings.filenameSuffix
+        )
         try FileManager.default.createDirectory(
             at: requestedURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
