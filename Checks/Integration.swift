@@ -87,7 +87,34 @@ struct IntegrationChecks {
         }
         precondition(CGImageSourceGetCount(resizedGIFSource) == 2)
         try checkDimensions(resizedGIF, width: 320, height: 180)
-        print("Image round-trip, collision, WebP, animated WebP, and animated GIF checks passed.")
+
+        if let rawFixture = ProcessInfo.processInfo.environment["IMAGE_RESIZER_RAW_FIXTURE"], !rawFixture.isEmpty {
+            var rawSettings = settings
+            rawSettings.width = 800
+            rawSettings.height = 1200
+            rawSettings.format = .original
+            let rawInput = URL(fileURLWithPath: rawFixture)
+            let rawOutput = try ResizeEngine.resize(
+                job: ResizeJob(source: rawInput, destination: outputs[0].appendingPathComponent(rawInput.lastPathComponent)),
+                settings: rawSettings
+            )
+            try checkDimensions(rawOutput, width: 800, height: 1199)
+            try checkImageIsNotBlack(rawOutput)
+            precondition(rawOutput.pathExtension == "jpg")
+
+            var rawWebPSettings = rawSettings
+            rawWebPSettings.format = .webp
+            let rawWebPOutput = try ResizeEngine.resize(
+                job: ResizeJob(source: rawInput, destination: outputs[0].appendingPathComponent(rawInput.lastPathComponent)),
+                settings: rawWebPSettings
+            )
+            try checkDimensions(rawWebPOutput, width: 800, height: 1199)
+            try checkImageIsNotBlack(rawWebPOutput)
+            precondition(rawWebPOutput.pathExtension == "webp")
+            print("Optional camera RAW fixture check passed.")
+        }
+
+        print("Image round-trip, collision, WebP, animated WebP, animated GIF, and RAW-path checks passed.")
     }
 
     static func makePNG(at url: URL, width: Int, height: Int, red: CGFloat, green: CGFloat, blue: CGFloat) throws {
@@ -112,6 +139,37 @@ struct IntegrationChecks {
               (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue == height else {
             throw NSError(domain: "ImageResizerChecks", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unexpected output dimensions"])
         }
+    }
+
+    static func checkImageIsNotBlack(_ url: URL) throws {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            throw NSError(domain: "ImageResizerChecks", code: 2, userInfo: [NSLocalizedDescriptionKey: "Output image is unreadable"])
+        }
+        let width = 32
+        let height = 32
+        let bytesPerRow = width * 4
+        var pixels = Data(count: bytesPerRow * height)
+        let didDraw = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let base = buffer.baseAddress,
+                  let context = CGContext(
+                    data: base, width: width, height: height, bitsPerComponent: 8,
+                    bytesPerRow: bytesPerRow,
+                    space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                    bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+                  ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard didDraw else {
+            throw NSError(domain: "ImageResizerChecks", code: 3, userInfo: [NSLocalizedDescriptionKey: "Could not sample output image"])
+        }
+        let values = [UInt8](pixels)
+        var colorTotal = 0
+        for offset in stride(from: 0, to: values.count, by: 4) {
+            colorTotal += Int(values[offset]) + Int(values[offset + 1]) + Int(values[offset + 2])
+        }
+        precondition(colorTotal > width * height * 3 * 5, "Output image is effectively black")
     }
 
     static func makeAnimatedWebP(frames: [URL], durations: [Int], output: URL) throws {

@@ -15,6 +15,7 @@ A native Apple Silicon macOS app for resizing large batches of images while pres
 - Pause, resume, cancel, saved presets, remembered settings, and collision-safe filenames.
 - Automatic update checks plus a manual **Check for Updates…** command.
 - RAW sources fall back to JPEG when “Keep Original” is selected.
+- Camera RAW files, including Canon CR3, use their embedded color-rendered preview for reliable resizing.
 
 Animated WebP writing uses the bundled Google libwebp 1.6.0 command-line codec under its BSD-style license. With location removal enabled, WebP EXIF/XMP metadata is omitted to ensure embedded location fields are not retained; ICC color profiles are preserved.
 

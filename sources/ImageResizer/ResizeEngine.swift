@@ -37,6 +37,13 @@ enum ResizeEngineError: LocalizedError {
 }
 
 struct ResizeEngine {
+    struct RenderableFrame {
+        let image: CGImage
+        let properties: [CFString: Any]?
+        let orientation: Int
+        let target: CGSize
+    }
+
     static func process(
         jobs: [ResizeJob],
         skipped: Int,
@@ -79,13 +86,13 @@ struct ResizeEngine {
         }
 
         let sourceType = CGImageSourceGetType(source)
+        let writableTypes = CGImageDestinationCopyTypeIdentifiers() as! [String]
+        let isRaw = sourceType.map { !writableTypes.contains($0 as String) } ?? true
         let wantsWebP = settings.format == .webp
             || (settings.format == .original && sourceType as String? == OutputFormat.webp.typeIdentifier as String?)
         if wantsWebP {
-            return try WebPCodec.resize(source: source, job: job, settings: settings)
+            return try WebPCodec.resize(source: source, isRaw: isRaw, job: job, settings: settings)
         }
-        let writableTypes = CGImageDestinationCopyTypeIdentifiers() as! [String]
-        let isRaw = sourceType.map { !writableTypes.contains($0 as String) } ?? true
         let requestedType: CFString = {
             if settings.format == .original {
                 return (isRaw ? OutputFormat.jpeg.typeIdentifier : sourceType) ?? OutputFormat.jpeg.typeIdentifier!
@@ -121,20 +128,18 @@ struct ResizeEngine {
         }
 
         for index in 0..<frameCount {
-            guard let image = CGImageSourceCreateImageAtIndex(source, index, [kCGImageSourceShouldCache: true] as CFDictionary) else {
-                throw ResizeEngineError.cannotCreateImage
-            }
-            let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
-            let orientation = (properties?[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
-            let orientedSize = orientation >= 5 && orientation <= 8
-                ? CGSize(width: image.height, height: image.width)
-                : CGSize(width: image.width, height: image.height)
-            let target = ResizeMath.fittedSize(source: orientedSize, width: settings.width, height: settings.height)
-            let rendered = try render(image, orientation: orientation, target: target, settings: settings, outputType: requestedType)
-            var outputProperties = settings.preserveMetadata ? (properties ?? [:]) : [:]
+            let frame = try renderableFrame(source: source, index: index, isRaw: isRaw, settings: settings)
+            let rendered = try render(
+                frame.image,
+                orientation: frame.orientation,
+                target: frame.target,
+                settings: settings,
+                outputType: requestedType
+            )
+            var outputProperties = settings.preserveMetadata ? (frame.properties ?? [:]) : [:]
             outputProperties[kCGImagePropertyOrientation] = 1
-            outputProperties[kCGImagePropertyPixelWidth] = Int(target.width)
-            outputProperties[kCGImagePropertyPixelHeight] = Int(target.height)
+            outputProperties[kCGImagePropertyPixelWidth] = Int(frame.target.width)
+            outputProperties[kCGImagePropertyPixelHeight] = Int(frame.target.height)
             if settings.removeLocation { removeLocation(from: &outputProperties) }
             if requestedType == OutputFormat.jpeg.typeIdentifier || requestedType == OutputFormat.heic.typeIdentifier {
                 outputProperties[kCGImageDestinationLossyCompressionQuality] = settings.quality
@@ -147,6 +152,60 @@ struct ResizeEngine {
             throw ResizeEngineError.cannotWrite(outputURL)
         }
         return outputURL
+    }
+
+    static func renderableFrame(
+        source: CGImageSource,
+        index: Int,
+        isRaw: Bool,
+        settings: ResizeSettings
+    ) throws -> RenderableFrame {
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
+        let orientation = (properties?[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+
+        var fallbackImage: CGImage?
+        let storedSize: CGSize
+        if let width = (properties?[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
+           let height = (properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue,
+           width > 0, height > 0 {
+            storedSize = CGSize(width: width, height: height)
+        } else {
+            fallbackImage = CGImageSourceCreateImageAtIndex(
+                source,
+                index,
+                [kCGImageSourceShouldCache: true] as CFDictionary
+            )
+            guard let fallbackImage else { throw ResizeEngineError.cannotCreateImage }
+            storedSize = CGSize(width: fallbackImage.width, height: fallbackImage.height)
+        }
+
+        let orientedSize = orientation >= 5 && orientation <= 8
+            ? CGSize(width: storedSize.height, height: storedSize.width)
+            : storedSize
+        let target = ResizeMath.fittedSize(source: orientedSize, width: settings.width, height: settings.height)
+
+        if isRaw {
+            // Camera RAW decoders can return high-bit-depth images that do not draw correctly
+            // into the app's 8-bit output context. Prefer the camera's embedded, color-rendered
+            // preview and let ImageIO generate one only when the RAW file has no preview.
+            let maxPixelSize = max(1, Int(max(target.width, target.height).rounded(.up)))
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+                kCGImageSourceShouldCacheImmediately: true
+            ]
+            if let preview = CGImageSourceCreateThumbnailAtIndex(source, index, options as CFDictionary) {
+                return RenderableFrame(image: preview, properties: properties, orientation: 1, target: target)
+            }
+        }
+
+        guard let image = fallbackImage ?? CGImageSourceCreateImageAtIndex(
+            source,
+            index,
+            [kCGImageSourceShouldCache: true] as CFDictionary
+        ) else { throw ResizeEngineError.cannotCreateImage }
+        return RenderableFrame(image: image, properties: properties, orientation: orientation, target: target)
     }
 
     static func render(
