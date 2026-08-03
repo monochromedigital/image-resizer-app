@@ -45,7 +45,7 @@ enum WebPCodec {
             durations.append(durationMilliseconds(properties: frame.properties))
         }
 
-        let requested = job.destination.deletingPathExtension().appendingPathExtension("webp")
+        let requested = job.requestedOutputURL(extension: "webp", filenameSuffix: settings.filenameSuffix)
         try FileManager.default.createDirectory(at: requested.deletingLastPathComponent(), withIntermediateDirectories: true)
         let output = availableURL(for: requested)
         let temporaryOutput = temporary.appendingPathComponent("encoded.webp")

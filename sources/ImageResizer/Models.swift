@@ -53,6 +53,7 @@ struct ResizeSettings: Equatable {
     var longEdge: Int?
     var percentage: Int?
     var preventEnlargement: Bool
+    var filenameSuffix: String
     var format: OutputFormat
     var quality: Double
     var preserveMetadata: Bool
@@ -206,4 +207,18 @@ enum ResizeMath {
 struct ResizeJob {
     let source: URL
     let destination: URL
+
+    func requestedOutputURL(extension outputExtension: String, filenameSuffix: String) -> URL {
+        let safeSuffix = filenameSuffix.unicodeScalars.map { scalar -> String in
+            if CharacterSet.controlCharacters.contains(scalar) || scalar == "/" || scalar == ":" {
+                return "-"
+            }
+            return String(scalar)
+        }.joined()
+        let directory = destination.deletingLastPathComponent()
+        let stem = destination.deletingPathExtension().lastPathComponent
+        return directory
+            .appendingPathComponent(stem + safeSuffix)
+            .appendingPathExtension(outputExtension)
+    }
 }

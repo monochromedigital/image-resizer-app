@@ -23,6 +23,7 @@ private func settings(
         longEdge: longEdge,
         percentage: percentage,
         preventEnlargement: preventEnlargement,
+        filenameSuffix: "-resized",
         format: .jpeg,
         quality: 0.9,
         preserveMetadata: true,
@@ -107,6 +108,22 @@ check(
         beneath: URL(fileURLWithPath: "/Photos")
     ) == "Trips/Paris/image.jpg",
     "folder structure"
+)
+let namedJob = ResizeJob(
+    source: URL(fileURLWithPath: "/Photos/image.png"),
+    destination: URL(fileURLWithPath: "/Exports/image.png")
+)
+check(
+    namedJob.requestedOutputURL(extension: "jpg", filenameSuffix: "-resized").lastPathComponent == "image-resized.jpg",
+    "filename suffix"
+)
+check(
+    namedJob.requestedOutputURL(extension: "jpg", filenameSuffix: "").lastPathComponent == "image.jpg",
+    "blank filename suffix"
+)
+check(
+    namedJob.requestedOutputURL(extension: "jpg", filenameSuffix: "/web:\n").lastPathComponent == "image-web--.jpg",
+    "safe filename suffix"
 )
 
 print("All Image Resizer checks passed.")
