@@ -34,7 +34,8 @@ enum WebPCodec {
             let rendered = try ResizeEngine.render(
                 frame.image,
                 orientation: frame.orientation,
-                target: frame.target,
+                target: frame.layout.outputSize,
+                drawRect: frame.layout.drawRect,
                 settings: settings,
                 outputType: OutputFormat.webp.typeIdentifier!
             )
