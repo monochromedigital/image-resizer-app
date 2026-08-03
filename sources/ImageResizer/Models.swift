@@ -1,6 +1,15 @@
 import Foundation
 import CoreGraphics
 
+enum ResizeMode: String, CaseIterable, Identifiable, Codable {
+    case fit = "Fit"
+    case fill = "Fill & Crop"
+    case longEdge = "Long Edge"
+    case percentage = "Percentage"
+
+    var id: String { rawValue }
+}
+
 enum OutputFormat: String, CaseIterable, Identifiable, Codable {
     case original = "Keep Original"
     case jpeg = "JPEG"
@@ -38,8 +47,11 @@ enum OutputFormat: String, CaseIterable, Identifiable, Codable {
 }
 
 struct ResizeSettings: Equatable {
+    var mode: ResizeMode
     var width: Int?
     var height: Int?
+    var longEdge: Int?
+    var percentage: Int?
     var preventEnlargement: Bool
     var format: OutputFormat
     var quality: Double
@@ -52,7 +64,12 @@ struct ResizeSettings: Equatable {
     var customDestination: URL?
 
     var isValid: Bool {
-        (width ?? 0) > 0 || (height ?? 0) > 0
+        switch mode {
+        case .fit: (width ?? 0) > 0 || (height ?? 0) > 0
+        case .fill: (width ?? 0) > 0 && (height ?? 0) > 0
+        case .longEdge: (longEdge ?? 0) > 0
+        case .percentage: (percentage ?? 0) > 0
+        }
     }
 }
 
@@ -87,6 +104,11 @@ struct BatchResult {
     let errors: [String]
 }
 
+struct ResizeLayout: Equatable {
+    let outputSize: CGSize
+    let drawRect: CGRect
+}
+
 enum ResizeMath {
     static func fittedSize(
         source: CGSize,
@@ -111,6 +133,73 @@ enum ResizeMath {
             width: max(1, (source.width * outputScale).rounded()),
             height: max(1, (source.height * outputScale).rounded())
         )
+    }
+
+    static func layout(source: CGSize, settings: ResizeSettings) -> ResizeLayout {
+        guard source.width > 0, source.height > 0 else {
+            return ResizeLayout(outputSize: .zero, drawRect: .zero)
+        }
+
+        switch settings.mode {
+        case .fit:
+            let output = fittedSize(
+                source: source,
+                width: settings.width,
+                height: settings.height,
+                preventEnlargement: settings.preventEnlargement
+            )
+            return ResizeLayout(outputSize: output, drawRect: CGRect(origin: .zero, size: output))
+
+        case .fill:
+            guard let width = settings.width, let height = settings.height, width > 0, height > 0 else {
+                return ResizeLayout(outputSize: .zero, drawRect: .zero)
+            }
+            let requested = CGSize(width: width, height: height)
+            let fillScale = max(requested.width / source.width, requested.height / source.height)
+            let scale = settings.preventEnlargement ? min(fillScale, 1) : fillScale
+            let outputRatio = fillScale > 0 ? scale / fillScale : 1
+            let output = roundedSize(CGSize(
+                width: requested.width * outputRatio,
+                height: requested.height * outputRatio
+            ))
+            let drawn = CGSize(width: source.width * scale, height: source.height * scale)
+            let origin = CGPoint(
+                x: (output.width - drawn.width) / 2,
+                y: (output.height - drawn.height) / 2
+            )
+            return ResizeLayout(outputSize: output, drawRect: CGRect(origin: origin, size: drawn))
+
+        case .longEdge:
+            guard let requested = settings.longEdge, requested > 0 else {
+                return ResizeLayout(outputSize: .zero, drawRect: .zero)
+            }
+            let proposedScale = CGFloat(requested) / max(source.width, source.height)
+            return proportionalLayout(source: source, proposedScale: proposedScale, preventEnlargement: settings.preventEnlargement)
+
+        case .percentage:
+            guard let percentage = settings.percentage, percentage > 0 else {
+                return ResizeLayout(outputSize: .zero, drawRect: .zero)
+            }
+            return proportionalLayout(
+                source: source,
+                proposedScale: CGFloat(percentage) / 100,
+                preventEnlargement: settings.preventEnlargement
+            )
+        }
+    }
+
+    private static func proportionalLayout(
+        source: CGSize,
+        proposedScale: CGFloat,
+        preventEnlargement: Bool
+    ) -> ResizeLayout {
+        let scale = preventEnlargement ? min(proposedScale, 1) : proposedScale
+        let output = roundedSize(CGSize(width: source.width * scale, height: source.height * scale))
+        return ResizeLayout(outputSize: output, drawRect: CGRect(origin: .zero, size: output))
+    }
+
+    private static func roundedSize(_ size: CGSize) -> CGSize {
+        CGSize(width: max(1, size.width.rounded()), height: max(1, size.height.rounded()))
     }
 }
 

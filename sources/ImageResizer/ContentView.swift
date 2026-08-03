@@ -123,27 +123,50 @@ struct ContentView: View {
     private var dimensionsSection: some View {
         GroupBox("Size") {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    dimensionField("Width", text: binding(\.widthText))
-                    Image(systemName: "xmark").foregroundStyle(.secondary)
-                    dimensionField("Height", text: binding(\.heightText))
-                    Text("px").foregroundStyle(.secondary)
-                    Spacer()
+                Picker("Resize mode", selection: binding(\.mode)) {
+                    ForEach(ResizeMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
                 }
-                Text("Images are scaled proportionally to fit. Leave one field empty to constrain only the other dimension.")
+                .pickerStyle(.segmented)
+
+                switch model.store.mode {
+                case .fit, .fill:
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        dimensionField("Width", text: binding(\.widthText))
+                        Image(systemName: "xmark").foregroundStyle(.secondary)
+                        dimensionField("Height", text: binding(\.heightText))
+                        Text("px").foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                case .longEdge:
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        dimensionField("Long edge", text: binding(\.longEdgeText))
+                        Text("px").foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                case .percentage:
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        dimensionField("Scale", text: binding(\.percentageText))
+                        Text("%").foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                }
+
+                Text(modeHelpText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle("Don't enlarge smaller images", isOn: binding(\.preventEnlargement))
                     .toggleStyle(.checkbox)
-                HStack {
-                    Menu("Presets") {
-                        ForEach(model.store.presets) { preset in
-                            Button(preset.name) { model.store.apply(preset) }
+                if model.store.mode == .fit || model.store.mode == .fill {
+                    HStack {
+                        Menu("Presets") {
+                            ForEach(model.store.presets) { preset in
+                                Button(preset.name) { model.store.apply(preset) }
+                            }
                         }
+                        Button("Save Preset…") { showingPresetPrompt = true }
+                        Spacer()
+                        if let preview = previewText { Text(preview).font(.caption).foregroundStyle(.secondary) }
                     }
-                    Button("Save Preset…") { showingPresetPrompt = true }
-                    Spacer()
-                    if let preview = previewText { Text(preview).font(.caption).foregroundStyle(.secondary) }
                 }
             }
             .padding(8)
@@ -252,10 +275,37 @@ struct ContentView: View {
     }
 
     private var previewText: String? {
-        guard model.store.settings.isValid else { return "Enter a width or height" }
-        let w = model.store.settings.width.map(String.init) ?? "∞"
-        let h = model.store.settings.height.map(String.init) ?? "∞"
-        return "Fits within \(w) × \(h) px"
+        guard model.store.settings.isValid else { return invalidSizeText }
+        switch model.store.mode {
+        case .fit:
+            let w = model.store.settings.width.map(String.init) ?? "∞"
+            let h = model.store.settings.height.map(String.init) ?? "∞"
+            return "Fits within \(w) × \(h) px"
+        case .fill:
+            return "Fills and crops to \(model.store.widthText) × \(model.store.heightText) px"
+        case .longEdge:
+            return "Long edge: \(model.store.longEdgeText) px"
+        case .percentage:
+            return "Scale: \(model.store.percentageText)%"
+        }
+    }
+
+    private var invalidSizeText: String {
+        switch model.store.mode {
+        case .fit: "Enter a width or height"
+        case .fill: "Enter both width and height"
+        case .longEdge: "Enter a long-edge size"
+        case .percentage: "Enter a percentage"
+        }
+    }
+
+    private var modeHelpText: String {
+        switch model.store.mode {
+        case .fit: "Scale proportionally inside the width and height. Either dimension may be empty."
+        case .fill: "Fill the exact width and height, cropping equally from opposite edges."
+        case .longEdge: "Set the longest side and preserve the image's proportions."
+        case .percentage: "Scale both dimensions by a percentage of the original size."
+        }
     }
 
     private func dimensionField(_ title: String, text: Binding<String>) -> some View {

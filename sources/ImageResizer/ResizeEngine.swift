@@ -41,7 +41,7 @@ struct ResizeEngine {
         let image: CGImage
         let properties: [CFString: Any]?
         let orientation: Int
-        let target: CGSize
+        let layout: ResizeLayout
     }
 
     static func process(
@@ -132,14 +132,15 @@ struct ResizeEngine {
             let rendered = try render(
                 frame.image,
                 orientation: frame.orientation,
-                target: frame.target,
+                target: frame.layout.outputSize,
+                drawRect: frame.layout.drawRect,
                 settings: settings,
                 outputType: requestedType
             )
             var outputProperties = settings.preserveMetadata ? (frame.properties ?? [:]) : [:]
             outputProperties[kCGImagePropertyOrientation] = 1
-            outputProperties[kCGImagePropertyPixelWidth] = Int(frame.target.width)
-            outputProperties[kCGImagePropertyPixelHeight] = Int(frame.target.height)
+            outputProperties[kCGImagePropertyPixelWidth] = Int(frame.layout.outputSize.width)
+            outputProperties[kCGImagePropertyPixelHeight] = Int(frame.layout.outputSize.height)
             if settings.removeLocation { removeLocation(from: &outputProperties) }
             if requestedType == OutputFormat.jpeg.typeIdentifier || requestedType == OutputFormat.heic.typeIdentifier {
                 outputProperties[kCGImageDestinationLossyCompressionQuality] = settings.quality
@@ -182,18 +183,13 @@ struct ResizeEngine {
         let orientedSize = orientation >= 5 && orientation <= 8
             ? CGSize(width: storedSize.height, height: storedSize.width)
             : storedSize
-        let target = ResizeMath.fittedSize(
-            source: orientedSize,
-            width: settings.width,
-            height: settings.height,
-            preventEnlargement: settings.preventEnlargement
-        )
+        let layout = ResizeMath.layout(source: orientedSize, settings: settings)
 
         if isRaw {
             // Camera RAW decoders can return high-bit-depth images that do not draw correctly
             // into the app's 8-bit output context. Prefer the camera's embedded, color-rendered
             // preview and let ImageIO generate one only when the RAW file has no preview.
-            let maxPixelSize = max(1, Int(max(target.width, target.height).rounded(.up)))
+            let maxPixelSize = max(1, Int(max(layout.drawRect.width, layout.drawRect.height).rounded(.up)))
             let options: [CFString: Any] = [
                 kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
@@ -201,7 +197,7 @@ struct ResizeEngine {
                 kCGImageSourceShouldCacheImmediately: true
             ]
             if let preview = CGImageSourceCreateThumbnailAtIndex(source, index, options as CFDictionary) {
-                return RenderableFrame(image: preview, properties: properties, orientation: 1, target: target)
+                return RenderableFrame(image: preview, properties: properties, orientation: 1, layout: layout)
             }
         }
 
@@ -210,13 +206,14 @@ struct ResizeEngine {
             index,
             [kCGImageSourceShouldCache: true] as CFDictionary
         ) else { throw ResizeEngineError.cannotCreateImage }
-        return RenderableFrame(image: image, properties: properties, orientation: orientation, target: target)
+        return RenderableFrame(image: image, properties: properties, orientation: orientation, layout: layout)
     }
 
     static func render(
         _ image: CGImage,
         orientation: Int,
         target: CGSize,
+        drawRect: CGRect? = nil,
         settings: ResizeSettings,
         outputType: CFString
     ) throws -> CGImage {
@@ -247,11 +244,15 @@ struct ResizeEngine {
             context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         }
         context.interpolationQuality = .high
-        applyOrientation(orientation, context: context, target: target)
+        let contentRect = drawRect ?? CGRect(origin: .zero, size: target)
+        context.saveGState()
+        context.translateBy(x: contentRect.origin.x, y: contentRect.origin.y)
+        applyOrientation(orientation, context: context, target: contentRect.size)
         let drawSize = orientation >= 5 && orientation <= 8
-            ? CGSize(width: target.height, height: target.width)
-            : target
+            ? CGSize(width: contentRect.height, height: contentRect.width)
+            : contentRect.size
         context.draw(image, in: CGRect(origin: .zero, size: drawSize))
+        context.restoreGState()
         guard let result = context.makeImage() else { throw ResizeEngineError.cannotCreateImage }
         return result
     }

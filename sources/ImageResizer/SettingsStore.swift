@@ -2,8 +2,11 @@ import Foundation
 
 @MainActor
 final class SettingsStore: ObservableObject {
+    @Published var mode: ResizeMode { didSet { save() } }
     @Published var widthText: String { didSet { save() } }
     @Published var heightText: String { didSet { save() } }
+    @Published var longEdgeText: String { didSet { save() } }
+    @Published var percentageText: String { didSet { save() } }
     @Published var preventEnlargement: Bool { didSet { save() } }
     @Published var format: OutputFormat { didSet { save() } }
     @Published var quality: Double { didSet { save() } }
@@ -21,8 +24,11 @@ final class SettingsStore: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        mode = ResizeMode(rawValue: defaults.string(forKey: "resizeMode") ?? "") ?? .fit
         widthText = defaults.string(forKey: "width") ?? "2048"
         heightText = defaults.string(forKey: "height") ?? "2048"
+        longEdgeText = defaults.string(forKey: "longEdge") ?? "2048"
+        percentageText = defaults.string(forKey: "percentage") ?? "50"
         preventEnlargement = defaults.object(forKey: "preventEnlargement") as? Bool ?? true
         format = OutputFormat(rawValue: defaults.string(forKey: "format") ?? "") ?? .original
         quality = defaults.object(forKey: "quality") as? Double ?? 0.9
@@ -48,8 +54,11 @@ final class SettingsStore: ObservableObject {
 
     var settings: ResizeSettings {
         ResizeSettings(
+            mode: mode,
             width: positiveInt(widthText),
             height: positiveInt(heightText),
+            longEdge: positiveInt(longEdgeText),
+            percentage: positiveInt(percentageText),
             preventEnlargement: preventEnlargement,
             format: format,
             quality: quality,
@@ -83,8 +92,11 @@ final class SettingsStore: ObservableObject {
 
     private func save() {
         guard !isLoading else { return }
+        defaults.set(mode.rawValue, forKey: "resizeMode")
         defaults.set(widthText, forKey: "width")
         defaults.set(heightText, forKey: "height")
+        defaults.set(longEdgeText, forKey: "longEdge")
+        defaults.set(percentageText, forKey: "percentage")
         defaults.set(preventEnlargement, forKey: "preventEnlargement")
         defaults.set(format.rawValue, forKey: "format")
         defaults.set(quality, forKey: "quality")

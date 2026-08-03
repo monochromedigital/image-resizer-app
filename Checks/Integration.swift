@@ -15,8 +15,11 @@ struct IntegrationChecks {
         let input = nested.appendingPathComponent("landscape.png")
         try makePNG(at: input, width: 640, height: 360, red: 0.1, green: 0.45, blue: 0.9)
         let settings = ResizeSettings(
+            mode: .fit,
             width: 320,
             height: 320,
+            longEdge: nil,
+            percentage: nil,
             preventEnlargement: true,
             format: .jpeg,
             quality: 0.9,
@@ -52,6 +55,32 @@ struct IntegrationChecks {
         enlargementSettings.preventEnlargement = false
         let enlarged = try ResizeEngine.resize(job: smallJob, settings: enlargementSettings)
         try checkDimensions(enlarged, width: 320, height: 160)
+
+        var fillSettings = settings
+        fillSettings.mode = .fill
+        let filled = try ResizeEngine.resize(
+            job: ResizeJob(source: input, destination: outputs[0].appendingPathComponent("Trips/fill.png")),
+            settings: fillSettings
+        )
+        try checkDimensions(filled, width: 320, height: 320)
+
+        var longEdgeSettings = settings
+        longEdgeSettings.mode = .longEdge
+        longEdgeSettings.longEdge = 200
+        let longEdge = try ResizeEngine.resize(
+            job: ResizeJob(source: input, destination: outputs[0].appendingPathComponent("Trips/long-edge.png")),
+            settings: longEdgeSettings
+        )
+        try checkDimensions(longEdge, width: 200, height: 113)
+
+        var percentageSettings = settings
+        percentageSettings.mode = .percentage
+        percentageSettings.percentage = 50
+        let percentage = try ResizeEngine.resize(
+            job: ResizeJob(source: input, destination: outputs[0].appendingPathComponent("Trips/percentage.png")),
+            settings: percentageSettings
+        )
+        try checkDimensions(percentage, width: 320, height: 180)
 
         var webPSettings = settings
         webPSettings.format = .webp
@@ -114,6 +143,17 @@ struct IntegrationChecks {
             try checkImageIsNotBlack(rawOutput)
             precondition(rawOutput.pathExtension == "jpg")
 
+            var rawFillSettings = rawSettings
+            rawFillSettings.mode = .fill
+            rawFillSettings.width = 800
+            rawFillSettings.height = 800
+            let rawFillOutput = try ResizeEngine.resize(
+                job: ResizeJob(source: rawInput, destination: outputs[0].appendingPathComponent("raw-fill.\(rawInput.pathExtension)")),
+                settings: rawFillSettings
+            )
+            try checkDimensions(rawFillOutput, width: 800, height: 800)
+            try checkImageIsNotBlack(rawFillOutput)
+
             var rawWebPSettings = rawSettings
             rawWebPSettings.format = .webp
             let rawWebPOutput = try ResizeEngine.resize(
@@ -126,7 +166,7 @@ struct IntegrationChecks {
             print("Optional camera RAW fixture check passed.")
         }
 
-        print("Image round-trip, no-enlargement, collision, WebP, animated WebP, animated GIF, and RAW-path checks passed.")
+        print("Image round-trip, resize modes, no-enlargement, collision, WebP, animated WebP, animated GIF, and RAW-path checks passed.")
     }
 
     static func makePNG(at url: URL, width: Int, height: Int, red: CGFloat, green: CGFloat, blue: CGFloat) throws {
