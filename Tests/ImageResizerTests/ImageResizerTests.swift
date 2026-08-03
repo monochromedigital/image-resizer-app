@@ -21,6 +21,8 @@ struct ImageResizerTests {
             filenameSuffix: "-resized",
             format: .jpeg,
             quality: 0.9,
+            targetFileSizeEnabled: false,
+            targetFileSizeBytes: nil,
             preserveMetadata: true,
             removeLocation: true,
             backgroundRed: 1,
@@ -104,5 +106,23 @@ struct ImageResizerTests {
         #expect(job.requestedOutputURL(extension: "jpg", filenameSuffix: "-resized").lastPathComponent == "image-resized.jpg")
         #expect(job.requestedOutputURL(extension: "jpg", filenameSuffix: "").lastPathComponent == "image.jpg")
         #expect(job.requestedOutputURL(extension: "jpg", filenameSuffix: "/web:\n").lastPathComponent == "image-web--.jpg")
+    }
+
+    @Test func fileSizeUnitsUseBinaryBytes() {
+        #expect(FileSizeUnit.kilobytes.bytes(for: 500) == 512_000)
+        #expect(FileSizeUnit.megabytes.bytes(for: 2) == 2_097_152)
+        #expect(FileSizeUnit.kilobytes.bytes(for: 0) == nil)
+    }
+
+    @Test func targetFileSizeRequiresACompatibleFormatAndPositiveLimit() {
+        var value = settings(mode: .fit, width: 1_000)
+        value.targetFileSizeEnabled = true
+        value.targetFileSizeBytes = 512_000
+        #expect(value.isValid)
+        value.format = .png
+        #expect(!value.isValid)
+        value.format = .webp
+        value.targetFileSizeBytes = nil
+        #expect(!value.isValid)
     }
 }

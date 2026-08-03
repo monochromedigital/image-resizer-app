@@ -187,12 +187,31 @@ struct ContentView: View {
 
                 if model.store.format == .jpeg || model.store.format == .heic || model.store.format == .webp || model.store.format == .original {
                     HStack {
-                        Text("Quality")
+                        Text(targetFileSizeIsActive ? "Maximum quality" : "Quality")
                         Slider(value: binding(\.quality), in: 0.1...1, step: 0.01)
                         Text("\(Int(model.store.quality * 100))")
                             .monospacedDigit()
                             .frame(width: 32, alignment: .trailing)
                     }
+                }
+
+                Toggle("Limit file size", isOn: binding(\.targetFileSizeEnabled))
+                if model.store.targetFileSizeEnabled {
+                    HStack {
+                        TextField("500", text: binding(\.targetFileSizeText))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 110)
+                        Picker("", selection: binding(\.targetFileSizeUnit)) {
+                            ForEach(FileSizeUnit.allCases) { unit in Text(unit.rawValue).tag(unit) }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .frame(width: 110)
+                        Spacer()
+                    }
+                    Text(targetFileSizeHelpText)
+                        .font(.caption)
+                        .foregroundStyle(targetFileSizeIsValid ? Color.secondary : Color.orange)
                 }
 
                 if model.store.format == .jpeg {
@@ -317,6 +336,24 @@ struct ContentView: View {
         case .longEdge: "Set the longest side and preserve the image's proportions."
         case .percentage: "Scale both dimensions by a percentage of the original size."
         }
+    }
+
+    private var targetFileSizeHelpText: String {
+        if !model.store.format.supportsTargetFileSize {
+            return "Choose JPEG or WebP to use a target file size."
+        }
+        if model.store.settings.targetFileSizeBytes == nil {
+            return "Enter a file size greater than zero."
+        }
+        return "Uses the highest quality up to the selected maximum while staying under this limit."
+    }
+
+    private var targetFileSizeIsValid: Bool {
+        model.store.format.supportsTargetFileSize && model.store.settings.targetFileSizeBytes != nil
+    }
+
+    private var targetFileSizeIsActive: Bool {
+        model.store.targetFileSizeEnabled && model.store.format.supportsTargetFileSize
     }
 
     private func dimensionField(_ title: String, text: Binding<String>) -> some View {

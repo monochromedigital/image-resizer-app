@@ -14,6 +14,7 @@ A native Apple Silicon macOS app for resizing large batches of images while pres
 - Preserve metadata while removing GPS location data by default.
 - Recreate source subfolders inside a sibling `Folder - Resized` output folder.
 - Add a remembered, editable filename suffix (`-resized` by default), or leave it blank to retain original filenames.
+- Export JPEG and WebP images under an optional KB or MB file-size limit at the highest quality that fits.
 - Pause, resume, cancel, saved presets, remembered settings, and collision-safe filenames.
 - Clear completed sources automatically while keeping the batch summary and output location available.
 - Automatic update checks plus a manual **Check for Updates…** command.

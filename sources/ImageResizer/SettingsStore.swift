@@ -11,6 +11,9 @@ final class SettingsStore: ObservableObject {
     @Published var filenameSuffix: String { didSet { save() } }
     @Published var format: OutputFormat { didSet { save() } }
     @Published var quality: Double { didSet { save() } }
+    @Published var targetFileSizeEnabled: Bool { didSet { save() } }
+    @Published var targetFileSizeText: String { didSet { save() } }
+    @Published var targetFileSizeUnit: FileSizeUnit { didSet { save() } }
     @Published var preserveMetadata: Bool { didSet { save() } }
     @Published var removeLocation: Bool { didSet { save() } }
     @Published var useCustomDestination: Bool { didSet { save() } }
@@ -34,6 +37,9 @@ final class SettingsStore: ObservableObject {
         filenameSuffix = defaults.string(forKey: "filenameSuffix") ?? "-resized"
         format = OutputFormat(rawValue: defaults.string(forKey: "format") ?? "") ?? .original
         quality = defaults.object(forKey: "quality") as? Double ?? 0.9
+        targetFileSizeEnabled = defaults.bool(forKey: "targetFileSizeEnabled")
+        targetFileSizeText = defaults.string(forKey: "targetFileSize") ?? "500"
+        targetFileSizeUnit = FileSizeUnit(rawValue: defaults.string(forKey: "targetFileSizeUnit") ?? "") ?? .kilobytes
         preserveMetadata = defaults.object(forKey: "preserveMetadata") as? Bool ?? true
         removeLocation = defaults.object(forKey: "removeLocation") as? Bool ?? true
         useCustomDestination = defaults.bool(forKey: "useCustomDestination")
@@ -65,6 +71,8 @@ final class SettingsStore: ObservableObject {
             filenameSuffix: filenameSuffix,
             format: format,
             quality: quality,
+            targetFileSizeEnabled: targetFileSizeEnabled,
+            targetFileSizeBytes: targetFileSizeUnit.bytes(for: positiveDouble(targetFileSizeText)),
             preserveMetadata: preserveMetadata,
             removeLocation: removeLocation,
             backgroundRed: backgroundRed,
@@ -93,6 +101,13 @@ final class SettingsStore: ObservableObject {
         return number
     }
 
+    private func positiveDouble(_ value: String) -> Double {
+        let normalized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: ".")
+        return Double(normalized) ?? 0
+    }
+
     private func save() {
         guard !isLoading else { return }
         defaults.set(mode.rawValue, forKey: "resizeMode")
@@ -104,6 +119,9 @@ final class SettingsStore: ObservableObject {
         defaults.set(filenameSuffix, forKey: "filenameSuffix")
         defaults.set(format.rawValue, forKey: "format")
         defaults.set(quality, forKey: "quality")
+        defaults.set(targetFileSizeEnabled, forKey: "targetFileSizeEnabled")
+        defaults.set(targetFileSizeText, forKey: "targetFileSize")
+        defaults.set(targetFileSizeUnit.rawValue, forKey: "targetFileSizeUnit")
         defaults.set(preserveMetadata, forKey: "preserveMetadata")
         defaults.set(removeLocation, forKey: "removeLocation")
         defaults.set(useCustomDestination, forKey: "useCustomDestination")

@@ -26,6 +26,8 @@ private func settings(
         filenameSuffix: "-resized",
         format: .jpeg,
         quality: 0.9,
+        targetFileSizeEnabled: false,
+        targetFileSizeBytes: nil,
         preserveMetadata: true,
         removeLocation: true,
         backgroundRed: 1,
@@ -125,5 +127,17 @@ check(
     namedJob.requestedOutputURL(extension: "jpg", filenameSuffix: "/web:\n").lastPathComponent == "image-web--.jpg",
     "safe filename suffix"
 )
+check(FileSizeUnit.kilobytes.bytes(for: 500) == 512_000, "kilobyte target")
+check(FileSizeUnit.megabytes.bytes(for: 2) == 2_097_152, "megabyte target")
+check(FileSizeUnit.kilobytes.bytes(for: 0) == nil, "invalid target")
+var targetSettings = settings(mode: .fit, width: 1_000)
+targetSettings.targetFileSizeEnabled = true
+targetSettings.targetFileSizeBytes = 512_000
+check(targetSettings.isValid, "JPEG target settings")
+targetSettings.format = .png
+check(!targetSettings.isValid, "unsupported target format")
+targetSettings.format = .webp
+targetSettings.targetFileSizeBytes = nil
+check(!targetSettings.isValid, "missing target size")
 
 print("All Image Resizer checks passed.")
