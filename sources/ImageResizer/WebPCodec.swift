@@ -17,7 +17,7 @@ enum WebPCodecError: LocalizedError {
 }
 
 enum WebPCodec {
-    static func resize(source: CGImageSource, job: ResizeJob, settings: ResizeSettings) throws -> URL {
+    static func resize(source: CGImageSource, isRaw: Bool, job: ResizeJob, settings: ResizeSettings) throws -> URL {
         guard let encoder = tool(named: "img2webp") else { throw WebPCodecError.toolsMissing }
         let frameCount = CGImageSourceGetCount(source)
         guard frameCount > 0 else { throw ResizeEngineError.unreadable(job.source) }
@@ -30,20 +30,18 @@ enum WebPCodec {
         var frameURLs: [URL] = []
         var durations: [Int] = []
         for index in 0..<frameCount {
-            guard let image = CGImageSourceCreateImageAtIndex(source, index, [kCGImageSourceShouldCache: true] as CFDictionary) else {
-                throw WebPCodecError.frameRenderingFailed
-            }
-            let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
-            let orientation = (properties?[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
-            let sourceSize = orientation >= 5 && orientation <= 8
-                ? CGSize(width: image.height, height: image.width)
-                : CGSize(width: image.width, height: image.height)
-            let target = ResizeMath.fittedSize(source: sourceSize, width: settings.width, height: settings.height)
-            let rendered = try ResizeEngine.render(image, orientation: orientation, target: target, settings: settings, outputType: OutputFormat.webp.typeIdentifier!)
+            let frame = try ResizeEngine.renderableFrame(source: source, index: index, isRaw: isRaw, settings: settings)
+            let rendered = try ResizeEngine.render(
+                frame.image,
+                orientation: frame.orientation,
+                target: frame.target,
+                settings: settings,
+                outputType: OutputFormat.webp.typeIdentifier!
+            )
             let frameURL = temporary.appendingPathComponent(String(format: "frame-%06d.pam", index))
             try writePAM(rendered, to: frameURL)
             frameURLs.append(frameURL)
-            durations.append(durationMilliseconds(properties: properties))
+            durations.append(durationMilliseconds(properties: frame.properties))
         }
 
         let requested = job.destination.deletingPathExtension().appendingPathExtension("webp")
