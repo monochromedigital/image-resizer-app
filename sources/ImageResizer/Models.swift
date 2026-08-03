@@ -21,6 +21,10 @@ enum OutputFormat: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
+    var supportsTargetFileSize: Bool {
+        self == .jpeg || self == .webp
+    }
+
     var preferredExtension: String? {
         switch self {
         case .original: nil
@@ -46,6 +50,21 @@ enum OutputFormat: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+enum FileSizeUnit: String, CaseIterable, Identifiable, Codable {
+    case kilobytes = "KB"
+    case megabytes = "MB"
+
+    var id: String { rawValue }
+
+    func bytes(for amount: Double) -> Int? {
+        guard amount.isFinite, amount > 0 else { return nil }
+        let multiplier = self == .kilobytes ? 1_024.0 : 1_048_576.0
+        let value = amount * multiplier
+        guard value <= Double(Int.max) else { return nil }
+        return Int(value.rounded())
+    }
+}
+
 struct ResizeSettings: Equatable {
     var mode: ResizeMode
     var width: Int?
@@ -56,6 +75,8 @@ struct ResizeSettings: Equatable {
     var filenameSuffix: String
     var format: OutputFormat
     var quality: Double
+    var targetFileSizeEnabled: Bool
+    var targetFileSizeBytes: Int?
     var preserveMetadata: Bool
     var removeLocation: Bool
     var backgroundRed: Double
@@ -65,12 +86,15 @@ struct ResizeSettings: Equatable {
     var customDestination: URL?
 
     var isValid: Bool {
-        switch mode {
+        let validSize = switch mode {
         case .fit: (width ?? 0) > 0 || (height ?? 0) > 0
         case .fill: (width ?? 0) > 0 && (height ?? 0) > 0
         case .longEdge: (longEdge ?? 0) > 0
         case .percentage: (percentage ?? 0) > 0
         }
+        let validTarget = !targetFileSizeEnabled
+            || (format.supportsTargetFileSize && (targetFileSizeBytes ?? 0) > 0)
+        return validSize && validTarget
     }
 }
 

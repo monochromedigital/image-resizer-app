@@ -24,6 +24,8 @@ struct IntegrationChecks {
             filenameSuffix: "-resized",
             format: .jpeg,
             quality: 0.9,
+            targetFileSizeEnabled: false,
+            targetFileSizeBytes: nil,
             preserveMetadata: true,
             removeLocation: true,
             backgroundRed: 1,
@@ -93,6 +95,42 @@ struct IntegrationChecks {
         )
         try checkDimensions(percentage, width: 320, height: 180)
 
+        let detailInput = nested.appendingPathComponent("detail.png")
+        try makeDetailedPNG(at: detailInput, width: 1_000, height: 750)
+        var detailSettings = settings
+        detailSettings.width = 800
+        detailSettings.height = 800
+        detailSettings.quality = 0.95
+        let baselineJPEG = try ResizeEngine.resize(
+            job: ResizeJob(source: detailInput, destination: outputs[0].appendingPathComponent("Trips/detail-baseline.png")),
+            settings: detailSettings
+        )
+        let baselineJPEGBytes = try Data(contentsOf: baselineJPEG).count
+        var targetJPEGSettings = detailSettings
+        targetJPEGSettings.targetFileSizeEnabled = true
+        targetJPEGSettings.targetFileSizeBytes = baselineJPEGBytes / 2
+        let targetJPEG = try ResizeEngine.resize(
+            job: ResizeJob(source: detailInput, destination: outputs[0].appendingPathComponent("Trips/detail-target.png")),
+            settings: targetJPEGSettings
+        )
+        let targetJPEGBytes = try Data(contentsOf: targetJPEG).count
+        precondition(targetJPEGBytes <= baselineJPEGBytes / 2)
+        precondition(targetJPEGBytes < baselineJPEGBytes)
+        try checkDimensions(targetJPEG, width: 800, height: 600)
+
+        var impossibleSettings = detailSettings
+        impossibleSettings.targetFileSizeEnabled = true
+        impossibleSettings.targetFileSizeBytes = 1
+        do {
+            _ = try ResizeEngine.resize(
+                job: ResizeJob(source: detailInput, destination: outputs[0].appendingPathComponent("Trips/detail-impossible.png")),
+                settings: impossibleSettings
+            )
+            preconditionFailure("An impossible file-size limit should fail")
+        } catch ResizeEngineError.targetFileSizeTooSmall(let bytes) {
+            precondition(bytes == 1)
+        }
+
         var webPSettings = settings
         webPSettings.format = .webp
         let webP = try ResizeEngine.resize(job: jobs[0], settings: webPSettings)
@@ -102,6 +140,24 @@ struct IntegrationChecks {
             preconditionFailure("WebP output is unreadable")
         }
         precondition(CGImageSourceGetType(webPSource) as String? == "org.webmproject.webp")
+
+        var detailWebPSettings = detailSettings
+        detailWebPSettings.format = .webp
+        let baselineWebP = try ResizeEngine.resize(
+            job: ResizeJob(source: detailInput, destination: outputs[0].appendingPathComponent("Trips/detail-webp-baseline.png")),
+            settings: detailWebPSettings
+        )
+        let baselineWebPBytes = try Data(contentsOf: baselineWebP).count
+        detailWebPSettings.targetFileSizeEnabled = true
+        detailWebPSettings.targetFileSizeBytes = baselineWebPBytes / 2
+        let targetWebP = try ResizeEngine.resize(
+            job: ResizeJob(source: detailInput, destination: outputs[0].appendingPathComponent("Trips/detail-webp-target.png")),
+            settings: detailWebPSettings
+        )
+        let targetWebPBytes = try Data(contentsOf: targetWebP).count
+        precondition(targetWebPBytes <= baselineWebPBytes / 2)
+        precondition(targetWebPBytes < baselineWebPBytes)
+        try checkDimensions(targetWebP, width: 800, height: 600)
 
         let redInput = nested.appendingPathComponent("red.png")
         try makePNG(at: redInput, width: 640, height: 360, red: 0.9, green: 0.15, blue: 0.1)
@@ -154,6 +210,18 @@ struct IntegrationChecks {
             try checkImageIsNotBlack(rawOutput)
             precondition(rawOutput.lastPathComponent == "\(rawInput.deletingPathExtension().lastPathComponent)-resized.jpg")
 
+            var rawTargetSettings = rawSettings
+            rawTargetSettings.targetFileSizeEnabled = true
+            rawTargetSettings.targetFileSizeBytes = try Data(contentsOf: rawOutput).count
+            let rawTargetOutput = try ResizeEngine.resize(
+                job: ResizeJob(source: rawInput, destination: outputs[0].appendingPathComponent("raw-target.\(rawInput.pathExtension)")),
+                settings: rawTargetSettings
+            )
+            let rawTargetBytes = try Data(contentsOf: rawTargetOutput).count
+            precondition(rawTargetBytes <= rawTargetSettings.targetFileSizeBytes!)
+            try checkDimensions(rawTargetOutput, width: 800, height: 1199)
+            try checkImageIsNotBlack(rawTargetOutput)
+
             var rawFillSettings = rawSettings
             rawFillSettings.mode = .fill
             rawFillSettings.width = 800
@@ -177,7 +245,7 @@ struct IntegrationChecks {
             print("Optional camera RAW fixture check passed.")
         }
 
-        print("Image round-trip, filename suffix, resize modes, no-enlargement, collision, WebP, animated WebP, animated GIF, and RAW-path checks passed.")
+        print("Image round-trip, target file size, filename suffix, resize modes, no-enlargement, collision, WebP, animated WebP, animated GIF, and RAW-path checks passed.")
     }
 
     static func makePNG(at url: URL, width: Int, height: Int, red: CGFloat, green: CGFloat, blue: CGFloat) throws {
@@ -190,6 +258,39 @@ struct IntegrationChecks {
         context.setFillColor(CGColor(red: red, green: green, blue: blue, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         let image = context.makeImage()!
+        let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, image, nil)
+        precondition(CGImageDestinationFinalize(destination))
+    }
+
+    static func makeDetailedPNG(at url: URL, width: Int, height: Int) throws {
+        var pixels = Data(count: width * height * 4)
+        pixels.withUnsafeMutableBytes { buffer in
+            let values = buffer.bindMemory(to: UInt8.self)
+            var state: UInt64 = 0xC0FFEE
+            for pixel in 0..<(width * height) {
+                state = state &* 6_364_136_223_846_793_005 &+ 1
+                let offset = pixel * 4
+                values[offset] = UInt8(truncatingIfNeeded: state >> 16)
+                values[offset + 1] = UInt8(truncatingIfNeeded: state >> 24)
+                values[offset + 2] = UInt8(truncatingIfNeeded: state >> 32)
+                values[offset + 3] = 255
+            }
+        }
+        let provider = CGDataProvider(data: pixels as CFData)!
+        let image = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )!
         let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
         CGImageDestinationAddImage(destination, image, nil)
         precondition(CGImageDestinationFinalize(destination))

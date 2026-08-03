@@ -25,6 +25,7 @@ enum ResizeEngineError: LocalizedError {
     case unsupportedOutput(String)
     case cannotCreateImage
     case cannotWrite(URL)
+    case targetFileSizeTooSmall(Int)
 
     var errorDescription: String? {
         switch self {
@@ -32,6 +33,8 @@ enum ResizeEngineError: LocalizedError {
         case .unsupportedOutput(let type): "This Mac cannot write \(type) images."
         case .cannotCreateImage: "Could not render the resized image."
         case .cannotWrite(let url): "Could not write \(url.lastPathComponent)."
+        case .targetFileSizeTooSmall(let bytes):
+            "The file cannot fit under \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)) at the minimum quality. Increase the limit or reduce the dimensions."
         }
     }
 }
@@ -114,6 +117,18 @@ struct ResizeEngine {
         )
         let outputURL = availableURL(for: requestedURL)
 
+        if requestedType == OutputFormat.jpeg.typeIdentifier,
+           settings.targetFileSizeEnabled,
+           let targetBytes = settings.targetFileSizeBytes {
+            return try resizeJPEGToTarget(
+                source: source,
+                isRaw: isRaw,
+                outputURL: outputURL,
+                targetBytes: targetBytes,
+                settings: settings
+            )
+        }
+
         let frameCount = CGImageSourceGetCount(source)
         guard let destination = CGImageDestinationCreateWithURL(
             outputURL as CFURL,
@@ -154,6 +169,105 @@ struct ResizeEngine {
             throw ResizeEngineError.cannotWrite(outputURL)
         }
         return outputURL
+    }
+
+    private static func resizeJPEGToTarget(
+        source: CGImageSource,
+        isRaw: Bool,
+        outputURL: URL,
+        targetBytes: Int,
+        settings: ResizeSettings
+    ) throws -> URL {
+        struct Frame {
+            let image: CGImage
+            let properties: [CFString: Any]
+        }
+
+        var frames: [Frame] = []
+        for index in 0..<CGImageSourceGetCount(source) {
+            let frame = try renderableFrame(source: source, index: index, isRaw: isRaw, settings: settings)
+            let rendered = try render(
+                frame.image,
+                orientation: frame.orientation,
+                target: frame.layout.outputSize,
+                drawRect: frame.layout.drawRect,
+                settings: settings,
+                outputType: OutputFormat.jpeg.typeIdentifier!
+            )
+            var properties = settings.preserveMetadata ? (frame.properties ?? [:]) : [:]
+            properties[kCGImagePropertyOrientation] = 1
+            properties[kCGImagePropertyPixelWidth] = Int(frame.layout.outputSize.width)
+            properties[kCGImagePropertyPixelHeight] = Int(frame.layout.outputSize.height)
+            if settings.removeLocation { removeLocation(from: &properties) }
+            frames.append(Frame(image: rendered, properties: properties))
+        }
+
+        var containerProperties = settings.preserveMetadata
+            ? (CGImageSourceCopyProperties(source, nil) as? [CFString: Any] ?? [:])
+            : [:]
+        if settings.removeLocation { removeLocation(from: &containerProperties) }
+
+        let data = try targetSizedData(
+            maximumQuality: settings.quality,
+            targetBytes: targetBytes
+        ) { quality in
+            let encoded = NSMutableData()
+            guard let destination = CGImageDestinationCreateWithData(
+                encoded as CFMutableData,
+                OutputFormat.jpeg.typeIdentifier!,
+                frames.count,
+                nil
+            ) else { throw ResizeEngineError.cannotWrite(outputURL) }
+            if !containerProperties.isEmpty {
+                CGImageDestinationSetProperties(destination, containerProperties as CFDictionary)
+            }
+            for frame in frames {
+                var properties = frame.properties
+                properties[kCGImageDestinationLossyCompressionQuality] = quality
+                CGImageDestinationAddImage(destination, frame.image, properties as CFDictionary)
+            }
+            guard CGImageDestinationFinalize(destination) else {
+                throw ResizeEngineError.cannotWrite(outputURL)
+            }
+            return encoded as Data
+        }
+        do {
+            try data.write(to: outputURL, options: .atomic)
+        } catch {
+            throw ResizeEngineError.cannotWrite(outputURL)
+        }
+        return outputURL
+    }
+
+    static func targetSizedData(
+        maximumQuality: Double,
+        targetBytes: Int,
+        minimumQuality: Double = 0.01,
+        encode: (Double) throws -> Data
+    ) throws -> Data {
+        let maximum = min(1, max(minimumQuality, maximumQuality))
+        let maximumData = try encode(maximum)
+        if maximumData.count <= targetBytes { return maximumData }
+
+        let minimumData = try encode(minimumQuality)
+        guard minimumData.count <= targetBytes else {
+            throw ResizeEngineError.targetFileSizeTooSmall(targetBytes)
+        }
+
+        var lower = minimumQuality
+        var upper = maximum
+        var best = minimumData
+        for _ in 0..<8 {
+            let candidate = (lower + upper) / 2
+            let data = try encode(candidate)
+            if data.count <= targetBytes {
+                lower = candidate
+                best = data
+            } else {
+                upper = candidate
+            }
+        }
+        return best
     }
 
     static func renderableFrame(

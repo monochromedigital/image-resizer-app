@@ -48,23 +48,45 @@ enum WebPCodec {
         let requested = job.requestedOutputURL(extension: "webp", filenameSuffix: settings.filenameSuffix)
         try FileManager.default.createDirectory(at: requested.deletingLastPathComponent(), withIntermediateDirectories: true)
         let output = availableURL(for: requested)
-        let temporaryOutput = temporary.appendingPathComponent("encoded.webp")
-        var arguments = ["-loop", String(loopCount(source: source)), "-mixed", "-min_size"]
-        for (index, frame) in frameURLs.enumerated() {
-            arguments += ["-d", String(durations[index]), "-lossy", "-q", String(Int(settings.quality * 100)), "-m", "4", frame.path]
-        }
-        arguments += ["-o", temporaryOutput.path]
-        try run(encoder, arguments: arguments)
+        func encodedData(quality: Double) throws -> Data {
+            let attempt = temporary.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: attempt, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: attempt) }
+            let temporaryOutput = attempt.appendingPathComponent("encoded.webp")
+            let qualityPercent = max(1, min(100, Int((quality * 100).rounded())))
+            var arguments = ["-loop", String(loopCount(source: source)), "-mixed", "-min_size"]
+            for (index, frame) in frameURLs.enumerated() {
+                arguments += ["-d", String(durations[index]), "-lossy", "-q", String(qualityPercent), "-m", "4", frame.path]
+            }
+            arguments += ["-o", temporaryOutput.path]
+            try run(encoder, arguments: arguments)
 
-        if settings.preserveMetadata, sourceType(source) == "org.webmproject.webp" {
-            try copyWebPMetadata(
-                from: job.source,
-                encoded: temporaryOutput,
-                temporaryDirectory: temporary,
-                removeLocation: settings.removeLocation
-            )
+            if settings.preserveMetadata, sourceType(source) == "org.webmproject.webp" {
+                try copyWebPMetadata(
+                    from: job.source,
+                    encoded: temporaryOutput,
+                    temporaryDirectory: attempt,
+                    removeLocation: settings.removeLocation
+                )
+            }
+            return try Data(contentsOf: temporaryOutput)
         }
-        try FileManager.default.moveItem(at: temporaryOutput, to: output)
+
+        let data: Data
+        if settings.targetFileSizeEnabled, let targetBytes = settings.targetFileSizeBytes {
+            data = try ResizeEngine.targetSizedData(
+                maximumQuality: settings.quality,
+                targetBytes: targetBytes,
+                encode: encodedData
+            )
+        } else {
+            data = try encodedData(quality: settings.quality)
+        }
+        do {
+            try data.write(to: output, options: .atomic)
+        } catch {
+            throw ResizeEngineError.cannotWrite(output)
+        }
         return output
     }
 
