@@ -104,8 +104,11 @@ final class ResizeViewModel: ObservableObject {
                 batch = BatchResult(progress: batch.progress, outputDirectories: outputDirectories, errors: batch.errors)
                 self.progress = batch.progress
                 self.result = batch
+                self.sources.removeAll()
                 self.isProcessing = false
                 self.isPaused = false
+                self.task = nil
+                self.control = nil
                 access.forEach { $0.stopAccessingSecurityScopedResource() }
             }
         } catch {

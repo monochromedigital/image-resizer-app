@@ -13,6 +13,7 @@ A native Apple Silicon macOS app for resizing large batches of images while pres
 - Preserve metadata while removing GPS location data by default.
 - Recreate source subfolders inside a sibling `Folder - Resized` output folder.
 - Pause, resume, cancel, saved presets, remembered settings, and collision-safe filenames.
+- Clear completed sources automatically while keeping the batch summary and output location available.
 - Automatic update checks plus a manual **Check for Updates…** command.
 - RAW sources fall back to JPEG when “Keep Original” is selected.
 - Camera RAW files, including Canon CR3, use their embedded color-rendered preview for reliable resizing.
