@@ -19,9 +19,24 @@ check(
     "portrait bounding box"
 )
 check(
-    ResizeMath.fittedSize(source: CGSize(width: 500, height: 250), width: 2000, height: 2000)
+    ResizeMath.fittedSize(
+        source: CGSize(width: 500, height: 250),
+        width: 2000,
+        height: 2000,
+        preventEnlargement: true
+    )
+        == CGSize(width: 500, height: 250),
+    "prevent upscaling"
+)
+check(
+    ResizeMath.fittedSize(
+        source: CGSize(width: 500, height: 250),
+        width: 2000,
+        height: 2000,
+        preventEnlargement: false
+    )
         == CGSize(width: 2000, height: 1000),
-    "upscaling"
+    "allow upscaling"
 )
 check(
     ResizeMath.fittedSize(source: CGSize(width: 400, height: 200), width: nil, height: 100)

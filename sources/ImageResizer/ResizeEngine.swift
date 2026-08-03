@@ -182,7 +182,12 @@ struct ResizeEngine {
         let orientedSize = orientation >= 5 && orientation <= 8
             ? CGSize(width: storedSize.height, height: storedSize.width)
             : storedSize
-        let target = ResizeMath.fittedSize(source: orientedSize, width: settings.width, height: settings.height)
+        let target = ResizeMath.fittedSize(
+            source: orientedSize,
+            width: settings.width,
+            height: settings.height,
+            preventEnlargement: settings.preventEnlargement
+        )
 
         if isRaw {
             // Camera RAW decoders can return high-bit-depth images that do not draw correctly

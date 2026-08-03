@@ -17,6 +17,7 @@ struct IntegrationChecks {
         let settings = ResizeSettings(
             width: 320,
             height: 320,
+            preventEnlargement: true,
             format: .jpeg,
             quality: 0.9,
             preserveMetadata: true,
@@ -40,6 +41,17 @@ struct IntegrationChecks {
         let second = try ResizeEngine.resize(job: jobs[0], settings: settings)
         precondition(second.lastPathComponent == "landscape-2.jpg")
         try checkDimensions(second, width: 320, height: 180)
+
+        let smallInput = nested.appendingPathComponent("small.png")
+        try makePNG(at: smallInput, width: 80, height: 40, red: 0.25, green: 0.7, blue: 0.35)
+        let smallJob = ResizeJob(source: smallInput, destination: outputs[0].appendingPathComponent("Trips/small.png"))
+        let protected = try ResizeEngine.resize(job: smallJob, settings: settings)
+        try checkDimensions(protected, width: 80, height: 40)
+
+        var enlargementSettings = settings
+        enlargementSettings.preventEnlargement = false
+        let enlarged = try ResizeEngine.resize(job: smallJob, settings: enlargementSettings)
+        try checkDimensions(enlarged, width: 320, height: 160)
 
         var webPSettings = settings
         webPSettings.format = .webp
@@ -114,7 +126,7 @@ struct IntegrationChecks {
             print("Optional camera RAW fixture check passed.")
         }
 
-        print("Image round-trip, collision, WebP, animated WebP, animated GIF, and RAW-path checks passed.")
+        print("Image round-trip, no-enlargement, collision, WebP, animated WebP, animated GIF, and RAW-path checks passed.")
     }
 
     static func makePNG(at url: URL, width: Int, height: Int, red: CGFloat, green: CGFloat, blue: CGFloat) throws {

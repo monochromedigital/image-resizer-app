@@ -40,6 +40,7 @@ enum OutputFormat: String, CaseIterable, Identifiable, Codable {
 struct ResizeSettings: Equatable {
     var width: Int?
     var height: Int?
+    var preventEnlargement: Bool
     var format: OutputFormat
     var quality: Double
     var preserveMetadata: Bool
@@ -87,7 +88,12 @@ struct BatchResult {
 }
 
 enum ResizeMath {
-    static func fittedSize(source: CGSize, width: Int?, height: Int?) -> CGSize {
+    static func fittedSize(
+        source: CGSize,
+        width: Int?,
+        height: Int?,
+        preventEnlargement: Bool = false
+    ) -> CGSize {
         guard source.width > 0, source.height > 0 else { return .zero }
         let widthScale = width.map { CGFloat($0) / source.width }
         let heightScale = height.map { CGFloat($0) / source.height }
@@ -100,9 +106,10 @@ enum ResizeMath {
         case (.none, .none): scale = 1
         }
 
+        let outputScale = preventEnlargement ? min(scale, 1) : scale
         return CGSize(
-            width: max(1, (source.width * scale).rounded()),
-            height: max(1, (source.height * scale).rounded())
+            width: max(1, (source.width * outputScale).rounded()),
+            height: max(1, (source.height * outputScale).rounded())
         )
     }
 }

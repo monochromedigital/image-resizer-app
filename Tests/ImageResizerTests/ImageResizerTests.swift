@@ -13,8 +13,23 @@ struct ImageResizerTests {
         #expect(result == CGSize(width: 1000, height: 2000))
     }
 
-    @Test func smallImageIsEnlarged() {
-        let result = ResizeMath.fittedSize(source: CGSize(width: 500, height: 250), width: 2000, height: 2000)
+    @Test func smallImageIsNotEnlargedWhenPrevented() {
+        let result = ResizeMath.fittedSize(
+            source: CGSize(width: 500, height: 250),
+            width: 2000,
+            height: 2000,
+            preventEnlargement: true
+        )
+        #expect(result == CGSize(width: 500, height: 250))
+    }
+
+    @Test func smallImageIsEnlargedWhenAllowed() {
+        let result = ResizeMath.fittedSize(
+            source: CGSize(width: 500, height: 250),
+            width: 2000,
+            height: 2000,
+            preventEnlargement: false
+        )
         #expect(result == CGSize(width: 2000, height: 1000))
     }
 

@@ -8,6 +8,7 @@ A native Apple Silicon macOS app for resizing large batches of images while pres
 
 - Drop individual images, folders, or multiple folders.
 - Fit proportionally inside a width/height bounding box; either dimension may be omitted.
+- Avoid enlarging smaller images by default, with an option to allow upscaling.
 - Preserve the source format or convert to JPEG, PNG, HEIC, TIFF, GIF, or WebP when macOS supports writing it.
 - Preserve multi-frame animation and per-frame timing for writable animated formats.
 - Preserve metadata while removing GPS location data by default.
