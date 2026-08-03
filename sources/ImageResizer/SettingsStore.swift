@@ -4,6 +4,7 @@ import Foundation
 final class SettingsStore: ObservableObject {
     @Published var widthText: String { didSet { save() } }
     @Published var heightText: String { didSet { save() } }
+    @Published var preventEnlargement: Bool { didSet { save() } }
     @Published var format: OutputFormat { didSet { save() } }
     @Published var quality: Double { didSet { save() } }
     @Published var preserveMetadata: Bool { didSet { save() } }
@@ -22,6 +23,7 @@ final class SettingsStore: ObservableObject {
         self.defaults = defaults
         widthText = defaults.string(forKey: "width") ?? "2048"
         heightText = defaults.string(forKey: "height") ?? "2048"
+        preventEnlargement = defaults.object(forKey: "preventEnlargement") as? Bool ?? true
         format = OutputFormat(rawValue: defaults.string(forKey: "format") ?? "") ?? .original
         quality = defaults.object(forKey: "quality") as? Double ?? 0.9
         preserveMetadata = defaults.object(forKey: "preserveMetadata") as? Bool ?? true
@@ -48,6 +50,7 @@ final class SettingsStore: ObservableObject {
         ResizeSettings(
             width: positiveInt(widthText),
             height: positiveInt(heightText),
+            preventEnlargement: preventEnlargement,
             format: format,
             quality: quality,
             preserveMetadata: preserveMetadata,
@@ -82,6 +85,7 @@ final class SettingsStore: ObservableObject {
         guard !isLoading else { return }
         defaults.set(widthText, forKey: "width")
         defaults.set(heightText, forKey: "height")
+        defaults.set(preventEnlargement, forKey: "preventEnlargement")
         defaults.set(format.rawValue, forKey: "format")
         defaults.set(quality, forKey: "quality")
         defaults.set(preserveMetadata, forKey: "preserveMetadata")

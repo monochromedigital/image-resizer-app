@@ -133,6 +133,8 @@ struct ContentView: View {
                 Text("Images are scaled proportionally to fit. Leave one field empty to constrain only the other dimension.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Toggle("Don't enlarge smaller images", isOn: binding(\.preventEnlargement))
+                    .toggleStyle(.checkbox)
                 HStack {
                     Menu("Presets") {
                         ForEach(model.store.presets) { preset in
