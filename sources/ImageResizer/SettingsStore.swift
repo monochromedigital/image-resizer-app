@@ -23,6 +23,10 @@ final class SettingsStore: ObservableObject {
     @Published var backgroundBlue: Double { didSet { save() } }
     @Published var presets: [ResizePreset] { didSet { savePresets() } }
     @Published var webExport: WebExport { didSet { saveWebExport() } }
+    /// Ladder widths are edited as text and parsed on read, matching how width, height
+    /// and the other numeric fields already work — a live-parsed binding fights the user
+    /// while they type.
+    @Published var ladderWidthsText: String { didSet { save() } }
 
     private let defaults: UserDefaults
     private var isLoading = true
@@ -61,6 +65,7 @@ final class SettingsStore: ObservableObject {
                 ResizePreset(name: "4K", width: 3840, height: 2160)
             ]
         }
+        ladderWidthsText = defaults.string(forKey: "ladderWidths") ?? "400, 800, 1200, 1600"
         if let data = defaults.data(forKey: "webExport"),
            let decoded = try? JSONDecoder().decode(WebExport.self, from: data) {
             webExport = decoded
@@ -90,8 +95,44 @@ final class SettingsStore: ObservableObject {
             backgroundBlue: backgroundBlue,
             useCustomDestination: useCustomDestination,
             customDestination: customDestination,
-            webExport: webExport.isEnabled ? webExport : nil
+            webExport: resolvedWebExport
         )
+    }
+
+    /// The live tree with the text-edited fields folded back in.
+    private var resolvedWebExport: WebExport? {
+        guard webExport.isEnabled else { return nil }
+        var resolved = webExport
+        if resolved.ladder != nil {
+            resolved.ladder?.widths = Ladder.parseWidths(ladderWidthsText)
+        }
+        return resolved
+    }
+
+    /// Turning web export on materialises the sub-trees it implies, so the section does
+    /// something the moment it is switched on. The ladder stays opt-in: it multiplies the
+    /// number of files written, which should be a deliberate choice rather than a
+    /// side effect of enabling the section.
+    var isWebExportEnabled: Bool {
+        get { webExport.isEnabled }
+        set {
+            var updated = webExport
+            updated.isEnabled = newValue
+            if newValue {
+                updated.naming = updated.naming ?? Naming()
+                updated.color = updated.color ?? ColorPolicy()
+            }
+            webExport = updated
+        }
+    }
+
+    var isLadderEnabled: Bool {
+        get { webExport.ladder != nil }
+        set {
+            var updated = webExport
+            updated.ladder = newValue ? (updated.ladder ?? Ladder()) : nil
+            webExport = updated
+        }
     }
 
     /// Assigns every field the preset asserts, leaving `nil` fields untouched.
@@ -110,11 +151,30 @@ final class SettingsStore: ObservableObject {
         if let quality = preset.quality { self.quality = quality }
         if let preserveMetadata = preset.preserveMetadata { self.preserveMetadata = preserveMetadata }
         if let removeLocation = preset.removeLocation { self.removeLocation = removeLocation }
-        if let webExport = preset.webExport { self.webExport = webExport }
+        if let webExport = preset.webExport {
+            self.webExport = webExport
+            if let widths = webExport.ladder?.widths, !widths.isEmpty {
+                ladderWidthsText = Ladder.formatWidths(widths)
+            }
+        }
     }
 
+    /// Captures the whole current configuration, not just the dimensions.
+    ///
+    /// Saving a preset while a ladder and a naming template are configured and getting
+    /// back only a width and a height would be indistinguishable from a bug.
     func addPreset(name: String) {
-        presets.append(ResizePreset(name: name, width: positiveInt(widthText), height: positiveInt(heightText)))
+        var preset = ResizePreset(name: name, width: positiveInt(widthText), height: positiveInt(heightText))
+        preset.mode = mode
+        preset.longEdge = positiveInt(longEdgeText)
+        preset.percentage = positiveInt(percentageText)
+        preset.preventEnlargement = preventEnlargement
+        preset.format = format
+        preset.quality = quality
+        preset.preserveMetadata = preserveMetadata
+        preset.removeLocation = removeLocation
+        preset.webExport = resolvedWebExport
+        presets.append(preset)
     }
 
     func deletePresets(at offsets: IndexSet) {
@@ -154,6 +214,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(backgroundRed, forKey: "backgroundRed")
         defaults.set(backgroundGreen, forKey: "backgroundGreen")
         defaults.set(backgroundBlue, forKey: "backgroundBlue")
+        defaults.set(ladderWidthsText, forKey: "ladderWidths")
     }
 
     private func savePresets() {

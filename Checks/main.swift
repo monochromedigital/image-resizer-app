@@ -400,4 +400,16 @@ heicTarget.targetFileSizeEnabled = true
 heicTarget.targetFileSizeBytes = 512_000
 check(heicTarget.isValid, "heic target settings validate")
 
+// Ladder widths are typed as free text, so parsing has to survive whatever lands in the
+// field without reordering what the user sees.
+check(Ladder.parseWidths("400, 800, 1200") == [400, 800, 1200], "comma separated widths")
+check(Ladder.parseWidths("400 800") == [400, 800], "space separated widths")
+check(Ladder.parseWidths("800, 400") == [800, 400], "typed order is preserved")
+check(Ladder.parseWidths("400, , 800,") == [400, 800], "stray separators are ignored")
+check(Ladder.parseWidths("400, abc, -5, 0, 800") == [400, 800], "nonsense is dropped")
+check(Ladder.parseWidths("") == [], "empty text yields no widths")
+check(Ladder.formatWidths([400, 800]) == "400, 800", "widths format back to text")
+// Round-tripping matters: the field is rendered from whatever was parsed.
+check(Ladder.formatWidths(Ladder.parseWidths("400, 800, 1200")) == "400, 800, 1200", "widths round-trip")
+
 print("All Image Resizer checks passed.")

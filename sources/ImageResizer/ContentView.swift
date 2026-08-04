@@ -19,6 +19,7 @@ struct ContentView: View {
                         dropZone
                         dimensionsSection
                         outputSection
+                        webExportSection
                         metadataSection
                     }
                     .padding(24)
@@ -248,6 +249,150 @@ struct ContentView: View {
             .padding(8)
         }
         .disabled(model.isProcessing)
+    }
+
+    private var webExportSection: some View {
+        GroupBox("Web Export") {
+            VStack(alignment: .leading, spacing: 14) {
+                Toggle("Prepare output for the web", isOn: binding(\.isWebExportEnabled))
+                Text("Clean filenames, sRGB colour, and optional responsive sizes. Everything runs on this Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if model.store.isWebExportEnabled {
+                    Divider()
+                    filenameControls
+                    Divider()
+                    ladderControls
+                    Divider()
+                    colourControls
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+        }
+        .disabled(model.isProcessing)
+    }
+
+    private var filenameControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("Filenames", selection: naming(\.style)) {
+                Text("Keep original").tag(Naming.Style.keepOriginal)
+                Text("Web-safe slug").tag(Naming.Style.slug)
+            }
+            .pickerStyle(.segmented)
+
+            if model.store.webExport.naming?.style == .slug {
+                HStack {
+                    Text("Pattern")
+                    TextField("{slug}", text: naming(\.template))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 220)
+                    Spacer()
+                }
+                Text(namingExampleText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle("Transliterate accents and other scripts", isOn: naming(\.transliterate))
+                Toggle("Strip camera prefixes like IMG_ and DSC_", isOn: naming(\.stripCameraPrefixes))
+            }
+        }
+    }
+
+    private var ladderControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Generate multiple sizes", isOn: binding(\.isLadderEnabled))
+                .disabled(!SizeLadder.applies(to: model.store.mode))
+            if !SizeLadder.applies(to: model.store.mode) {
+                Text("Percentage scales relative to each source, so there are no fixed widths to generate.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if model.store.isLadderEnabled {
+                HStack {
+                    Text("Widths")
+                    TextField("400, 800, 1200, 1600", text: binding(\.ladderWidthsText))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 240)
+                    Text("px").foregroundStyle(.secondary)
+                    Spacer()
+                }
+                Toggle("Skip sizes larger than the original", isOn: ladder(\.skipUpscales))
+                Toggle("Also keep the original size", isOn: ladder(\.includeOriginalSize))
+                Text(outputCountText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var colourControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("Colour profile", selection: colour(\.embedProfile)) {
+                Text("Untagged").tag(ColorPolicy.ProfileMode.untagged)
+                Text("Embed sRGB").tag(ColorPolicy.ProfileMode.sRGB)
+            }
+            .frame(maxWidth: 290)
+            Text("Output is always converted to sRGB. Browsers read untagged images as sRGB; embed a profile if your pipeline expects one.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Shows the naming pattern applied to a representative filename, so the effect of a
+    /// template is visible without running a batch.
+    private var namingExampleText: String {
+        guard let naming = model.store.webExport.naming else { return "" }
+        let example = OutputNaming.stem(
+            source: URL(fileURLWithPath: "/Photos/IMG_4821 Café Sign.jpg"),
+            naming: naming,
+            filenameSuffix: model.store.filenameSuffix,
+            outputExtension: "jpg",
+            outputSize: CGSize(width: 800, height: 600)
+        )
+        return "IMG_4821 Café Sign.jpg → \(example).jpg"
+    }
+
+    /// The per-image multiplier, computed from settings alone. A true total needs a full
+    /// plan — every dropped folder walked — which is far too expensive for a label that
+    /// updates as you type. The exact figure appears in the progress bar once planning
+    /// has run.
+    private var outputCountText: String {
+        let rungs = SizeLadder.expand(model.store.settings, sourceSize: nil).count
+        guard rungs > 1 else { return "One file per image." }
+        return "Up to \(rungs) files per image. Sizes larger than a given original are skipped."
+    }
+
+    private func naming<Value>(_ keyPath: WritableKeyPath<Naming, Value>) -> Binding<Value> {
+        Binding(
+            get: { (model.store.webExport.naming ?? Naming())[keyPath: keyPath] },
+            set: {
+                var updated = model.store.webExport.naming ?? Naming()
+                updated[keyPath: keyPath] = $0
+                model.store.webExport.naming = updated
+            }
+        )
+    }
+
+    private func ladder<Value>(_ keyPath: WritableKeyPath<Ladder, Value>) -> Binding<Value> {
+        Binding(
+            get: { (model.store.webExport.ladder ?? Ladder())[keyPath: keyPath] },
+            set: {
+                var updated = model.store.webExport.ladder ?? Ladder()
+                updated[keyPath: keyPath] = $0
+                model.store.webExport.ladder = updated
+            }
+        )
+    }
+
+    private func colour<Value>(_ keyPath: WritableKeyPath<ColorPolicy, Value>) -> Binding<Value> {
+        Binding(
+            get: { (model.store.webExport.color ?? ColorPolicy())[keyPath: keyPath] },
+            set: {
+                var updated = model.store.webExport.color ?? ColorPolicy()
+                updated[keyPath: keyPath] = $0
+                model.store.webExport.color = updated
+            }
+        )
     }
 
     private var metadataSection: some View {
