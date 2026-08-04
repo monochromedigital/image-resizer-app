@@ -4,7 +4,7 @@ import ImageIO
 
 @main
 struct IntegrationChecks {
-    static func main() throws {
+    static func main() async throws {
         let manager = FileManager.default
         let root = URL(fileURLWithPath: manager.currentDirectoryPath)
             .appendingPathComponent(".build-checks/fixture", isDirectory: true)
@@ -440,6 +440,63 @@ struct IntegrationChecks {
         // Derived from the source, not the output — the output name carries a ladder width.
         precondition((targetIPTC[kCGImagePropertyIPTCObjectName] as? String) == "Detail", "title comes from the source filename")
         print("Rights metadata checks passed.")
+
+
+        // Sidecars end to end: a real laddered batch, then the manifest and markup read
+        // back off disk. This is what plan-time naming was for — the manifest describes
+        // files by the names they were actually written under.
+        let sidecarRoot = root.appendingPathComponent("Sidecars", isDirectory: true)
+        try manager.createDirectory(at: sidecarRoot, withIntermediateDirectories: true)
+        try makePNG(at: sidecarRoot.appendingPathComponent("IMG_4821 Café Sign.png"), width: 1_000, height: 562, red: 0.8, green: 0.4, blue: 0.2)
+        var sidecarSettings = settings
+        sidecarSettings.filenameSuffix = ""
+        sidecarSettings.width = nil
+        sidecarSettings.height = nil
+        sidecarSettings.webExport = WebExport(
+            isEnabled: true,
+            naming: Naming(template: "{slug}-{width}"),
+            ladder: Ladder(widths: [400, 800]),
+            rights: RightsMetadata(titlePolicy: .fromFilename),
+            sidecars: Sidecars(placeholder: .base64DataURI, pathPrefix: "/images")
+        )
+        let (sidecarJobs, sidecarOutputs, sidecarSkipped) = try JobPlanner.plan(sources: [sidecarRoot], settings: sidecarSettings)
+        precondition(sidecarJobs.count == 2, "expected two rungs")
+        // Through the real batch loop, so the engine's own rendition recording — the
+        // dimensions and byte counts the manifest is built from — is what gets checked.
+        let batch = await ResizeEngine.process(
+            jobs: sidecarJobs,
+            skipped: sidecarSkipped,
+            control: ProcessingControl()
+        ) { _ in }
+        precondition(batch.progress.failed == 0, "sidecar batch failed: \(batch.errors)")
+        precondition(batch.renditions.count == 2, "the batch recorded \(batch.renditions.count) renditions")
+        precondition(batch.renditions.allSatisfy { $0.bytes > 0 }, "renditions must record real byte counts")
+        precondition(batch.renditions.contains { $0.width == 400 }, "the 400 rung was recorded")
+        let sidecarFiles = try SidecarWriter.write(
+            renditions: batch.renditions,
+            outputDirectories: sidecarOutputs,
+            settings: sidecarSettings
+        )
+        precondition(sidecarFiles.count == 2, "expected a manifest and a snippet, got \(sidecarFiles.count)")
+
+        let manifestURL = sidecarOutputs[0].appendingPathComponent("manifest.json")
+        let manifest = try JSONSerialization.jsonObject(with: try Data(contentsOf: manifestURL)) as? [String: Any] ?? [:]
+        guard let images = manifest["images"] as? [[String: Any]], let first = images.first,
+              let manifestRenditions = first["renditions"] as? [[String: Any]] else {
+            preconditionFailure("manifest has no images")
+        }
+        precondition((first["slug"] as? String) == "cafe-sign", "manifest slug: \(String(describing: first["slug"]))")
+        precondition((first["source"] as? String) == "IMG_4821 Café Sign.png", "manifest names the source")
+        precondition(manifestRenditions.count == 2, "manifest lists every rendition")
+        precondition((manifestRenditions[0]["path"] as? String) == "/images/cafe-sign-400.jpg", "manifest path: \(manifestRenditions[0])")
+        precondition((manifestRenditions[0]["width"] as? Int) == 400, "manifest width")
+        precondition((manifestRenditions[0]["bytes"] as? Int ?? 0) > 0, "manifest records real byte counts")
+        precondition((first["placeholder"] as? String)?.hasPrefix("data:image/jpeg;base64,") == true, "placeholder is an inline data URI")
+
+        let snippet = try String(contentsOf: sidecarOutputs[0].appendingPathComponent("snippet.html"), encoding: .utf8)
+        precondition(snippet.contains("srcset=\"/images/cafe-sign-400.jpg 400w, /images/cafe-sign-800.jpg 800w\""), "snippet srcset: \(snippet)")
+        precondition(snippet.contains("alt=\"Cafe Sign\""), "snippet alt")
+        print("Sidecar checks passed.")
 
         if let rawFixture = ProcessInfo.processInfo.environment["IMAGE_RESIZER_RAW_FIXTURE"], !rawFixture.isEmpty {
             var rawSettings = settings

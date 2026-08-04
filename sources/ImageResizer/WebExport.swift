@@ -17,6 +17,7 @@ struct WebExport: Codable, Equatable {
     var ladder: Ladder?
     var color: ColorPolicy?
     var rights: RightsMetadata?
+    var sidecars: Sidecars?
 
     init(
         schemaVersion: Int = WebExport.currentSchemaVersion,
@@ -24,7 +25,8 @@ struct WebExport: Codable, Equatable {
         naming: Naming? = nil,
         ladder: Ladder? = nil,
         color: ColorPolicy? = nil,
-        rights: RightsMetadata? = nil
+        rights: RightsMetadata? = nil,
+        sidecars: Sidecars? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.isEnabled = isEnabled
@@ -32,6 +34,7 @@ struct WebExport: Codable, Equatable {
         self.ladder = ladder
         self.color = color
         self.rights = rights
+        self.sidecars = sidecars
     }
 
     /// Decoding is deliberately lenient. A blob written by an earlier build is missing
@@ -51,6 +54,61 @@ struct WebExport: Codable, Equatable {
         ladder = try container.decodeIfPresent(Ladder.self, forKey: .ladder)
         color = try container.decodeIfPresent(ColorPolicy.self, forKey: .color)
         rights = try container.decodeIfPresent(RightsMetadata.self, forKey: .rights)
+        sidecars = try container.decodeIfPresent(Sidecars.self, forKey: .sidecars)
+    }
+}
+
+/// Files written alongside the images, describing the output set.
+///
+/// These need every final filename, which is why naming moved to plan time — the
+/// manifest describes the whole batch and cannot be assembled from names invented
+/// during encoding.
+struct Sidecars: Codable, Equatable {
+    enum PlaceholderMode: String, Codable {
+        case none
+        /// A tiny inline JPEG, base64 encoded, to show while the real image loads.
+        case base64DataURI
+    }
+
+    var manifest: Bool
+    var markupSnippet: Bool
+    var placeholder: PlaceholderMode
+    var placeholderWidth: Int
+    /// Emitted verbatim into the `sizes` attribute; the browser needs it to pick a
+    /// rendition before layout.
+    var sizesAttribute: String
+    /// Prepended to every path in the manifest and markup, so the output describes where
+    /// the files will live rather than where they were written.
+    var pathPrefix: String
+
+    init(
+        manifest: Bool = true,
+        markupSnippet: Bool = true,
+        placeholder: PlaceholderMode = .none,
+        placeholderWidth: Int = 20,
+        sizesAttribute: String = "100vw",
+        pathPrefix: String = ""
+    ) {
+        self.manifest = manifest
+        self.markupSnippet = markupSnippet
+        self.placeholder = placeholder
+        self.placeholderWidth = placeholderWidth
+        self.sizesAttribute = sizesAttribute
+        self.pathPrefix = pathPrefix
+    }
+
+    var writesAnything: Bool { manifest || markupSnippet }
+
+    /// Lenient for the same reason `WebExport`'s is — see the note there.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Sidecars()
+        manifest = try container.decodeIfPresent(Bool.self, forKey: .manifest) ?? defaults.manifest
+        markupSnippet = try container.decodeIfPresent(Bool.self, forKey: .markupSnippet) ?? defaults.markupSnippet
+        placeholder = try container.decodeIfPresent(PlaceholderMode.self, forKey: .placeholder) ?? defaults.placeholder
+        placeholderWidth = try container.decodeIfPresent(Int.self, forKey: .placeholderWidth) ?? defaults.placeholderWidth
+        sizesAttribute = try container.decodeIfPresent(String.self, forKey: .sizesAttribute) ?? defaults.sizesAttribute
+        pathPrefix = try container.decodeIfPresent(String.self, forKey: .pathPrefix) ?? defaults.pathPrefix
     }
 }
 

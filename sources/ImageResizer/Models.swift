@@ -183,10 +183,23 @@ struct BatchProgress: Equatable {
     var fraction: Double { total == 0 ? 0 : Double(processed) / Double(total) }
 }
 
+/// One written file, recorded so the sidecars can describe the output set without
+/// re-deriving anything.
+struct Rendition: Equatable {
+    let source: URL
+    let output: URL
+    let width: Int
+    let height: Int
+    let bytes: Int
+
+    var format: String { output.pathExtension.lowercased() }
+}
+
 struct BatchResult {
     let progress: BatchProgress
     let outputDirectories: [URL]
     let errors: [String]
+    var renditions: [Rendition] = []
 }
 
 struct ResizeLayout: Equatable {

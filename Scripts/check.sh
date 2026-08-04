@@ -20,6 +20,7 @@ SDKROOT="$SDK" CLANG_MODULE_CACHE_PATH="$MODULE_CACHE" swiftc \
   "$ROOT/Sources/ImageResizer/OutputNaming.swift" \
   "$ROOT/Sources/ImageResizer/SizeLadder.swift" \
   "$ROOT/Sources/ImageResizer/RightsWriter.swift" \
+  "$ROOT/Sources/ImageResizer/SidecarWriter.swift" \
   "$ROOT/Sources/ImageResizer/JobPlanner.swift" \
   "$ROOT/Checks/main.swift" \
   -o "$OUTPUT"
@@ -32,6 +33,7 @@ SDKROOT="$SDK" CLANG_MODULE_CACHE_PATH="$MODULE_CACHE" swiftc -parse-as-library 
   "$ROOT/Sources/ImageResizer/OutputNaming.swift" \
   "$ROOT/Sources/ImageResizer/SizeLadder.swift" \
   "$ROOT/Sources/ImageResizer/RightsWriter.swift" \
+  "$ROOT/Sources/ImageResizer/SidecarWriter.swift" \
   "$ROOT/Sources/ImageResizer/JobPlanner.swift" \
   "$ROOT/Sources/ImageResizer/ResizeEngine.swift" \
   "$ROOT/Sources/ImageResizer/WebPCodec.swift" \

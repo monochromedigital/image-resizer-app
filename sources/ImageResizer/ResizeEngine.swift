@@ -57,6 +57,7 @@ struct ResizeEngine {
             var progress = BatchProgress(skipped: skipped, total: jobs.count + skipped)
             var errors: [String] = []
             var outputs = Set<URL>()
+            var renditions: [Rendition] = []
 
             for job in jobs {
                 do {
@@ -65,6 +66,9 @@ struct ResizeEngine {
                     onProgress(progress)
                     let destination = try resize(job: job)
                     outputs.insert(destination.deletingLastPathComponent())
+                    if let rendition = rendition(source: job.source, output: destination) {
+                        renditions.append(rendition)
+                    }
                     progress.completed += 1
                 } catch is CancellationError {
                     break
@@ -77,7 +81,7 @@ struct ResizeEngine {
 
             progress.currentName = ""
             onProgress(progress)
-            return BatchResult(progress: progress, outputDirectories: Array(outputs), errors: errors)
+            return BatchResult(progress: progress, outputDirectories: Array(outputs), errors: errors, renditions: renditions)
         }.value
     }
 
@@ -404,6 +408,19 @@ struct ResizeEngine {
         case 8: context.translateBy(x: 0, y: h); context.rotate(by: -.pi / 2)
         default: break
         }
+    }
+
+    /// Records what was actually written, read back from the file's header rather than
+    /// from what was requested — the two can differ, and the sidecars describe files a
+    /// browser will fetch, so they have to match reality.
+    private static func rendition(source: URL, output: URL) -> Rendition? {
+        guard let imageSource = CGImageSourceCreateWithURL(output as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue
+        else { return nil }
+        let bytes = (try? FileManager.default.attributesOfItem(atPath: output.path)[.size] as? Int) ?? 0
+        return Rendition(source: source, output: output, width: width, height: height, bytes: bytes ?? 0)
     }
 
     private static func rightsMetadata(for settings: ResizeSettings) -> CGImageMetadata? {

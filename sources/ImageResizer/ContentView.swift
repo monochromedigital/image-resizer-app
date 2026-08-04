@@ -268,6 +268,8 @@ struct ContentView: View {
                     colourControls
                     Divider()
                     rightsControls
+                    Divider()
+                    sidecarControls
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -356,6 +358,46 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var sidecarControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Write a manifest and ready-to-paste markup", isOn: binding(\.areSidecarsEnabled))
+            if model.store.areSidecarsEnabled {
+                rightsField("Path prefix", placeholder: "/images", value: sidecar(\.pathPrefix))
+                rightsField("sizes", placeholder: "100vw", value: sidecar(\.sizesAttribute))
+                Picker("Placeholder", selection: sidecarPlaceholder()) {
+                    Text("None").tag(Sidecars.PlaceholderMode.none)
+                    Text("Inline blur-up").tag(Sidecars.PlaceholderMode.base64DataURI)
+                }
+                .frame(maxWidth: 320)
+                Text("manifest.json and snippet.html are written beside the images. Paths use the prefix, so they describe where the files will live rather than where they were written.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func sidecar(_ keyPath: WritableKeyPath<Sidecars, String>) -> Binding<String> {
+        Binding(
+            get: { (model.store.webExport.sidecars ?? Sidecars())[keyPath: keyPath] },
+            set: {
+                var updated = model.store.webExport.sidecars ?? Sidecars()
+                updated[keyPath: keyPath] = $0
+                model.store.webExport.sidecars = updated
+            }
+        )
+    }
+
+    private func sidecarPlaceholder() -> Binding<Sidecars.PlaceholderMode> {
+        Binding(
+            get: { (model.store.webExport.sidecars ?? Sidecars()).placeholder },
+            set: {
+                var updated = model.store.webExport.sidecars ?? Sidecars()
+                updated.placeholder = $0
+                model.store.webExport.sidecars = updated
+            }
+        )
     }
 
     private func rightsField(_ title: String, placeholder: String, value: Binding<String>) -> some View {

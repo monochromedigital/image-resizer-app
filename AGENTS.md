@@ -48,7 +48,7 @@ See [RELEASING.md](RELEASING.md) for the full release mechanics.
 
 ```
 Package.swift            swift-tools 5.10, macOS 14+, one executable target
-sources/ImageResizer/    all app code, 12 flat files, no subdirectories
+sources/ImageResizer/    all app code, 14 flat files, no subdirectories
 Checks/                  the real test suite (see Testing below)
 Tests/ImageResizerTests/ NOT built — see Testing below
 Scripts/                 check.sh, package.sh, release.sh, ci-release.sh, make-icns.js
@@ -84,6 +84,8 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
 | `WebExport.swift` | The web-export config tree: `WebExport` plus its per-feature sub-structs (`Naming`, `Ladder`, `AspectRatio`). All `Codable`, all leniently decoded. |
 | `OutputNaming.swift` | Filename construction — slugging, transliteration, `{token}` templates — plus `NameReservations`, which hands out collision-free output URLs. |
 | `SizeLadder.swift` | `expand(_:sourceSize:)`: one `ResizeSettings` in, one per ladder rung out. Pure. |
+| `RightsWriter.swift` | The only place metadata is *authored*. Builds the IPTC dictionary and the `CGImageMetadata` for XMP-only fields. |
+| `SidecarWriter.swift` | `manifest.json`, `snippet.html`, and inline placeholders, assembled from the renditions a batch recorded. |
 | `JobPlanner.swift` | Enumerates sources into `[ResizeJob]`, **resolves every output filename**, decides output directory names, skips unreadable files. Touches FileManager and ImageIO. |
 | `ResizeEngine.swift` | The pipeline. `resize(job:)` is the core: open source → pick output type → render frames → write via `CGImageDestination`. Also the serial batch loop, the quality bisection, and `ProcessingControl` (lock-based pause/cancel). |
 | `WebPCodec.swift` | WebP output. ImageIO cannot *write* WebP, so this renders frames to intermediate `.pam` files in a temp dir and shells out to the bundled `img2webp`; `webpmux` copies ICC/EXIF/XMP chunks. |
@@ -128,6 +130,10 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
   (`kCGImagePropertyGPSDictionary`). There is no metadata *authoring* path. For WebP,
   `removeLocation` instead drops EXIF and XMP wholesale and keeps only ICC.
 - **`ResizeSettings` is `Equatable` but not `Codable`**; `ResizePreset` is `Codable`.
+- **`ResizeEngine.process` records a `Rendition` per written file**, read back from the
+  output's header rather than from what was requested. The sidecars describe files a
+  browser will fetch, so they have to match what is on disk. Anything that adds an output
+  path must record it too, or it will be missing from the manifest.
 
 ## Build, run, test
 
