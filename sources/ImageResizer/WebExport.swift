@@ -14,15 +14,18 @@ struct WebExport: Codable, Equatable {
     var schemaVersion: Int
     var isEnabled: Bool
     var naming: Naming?
+    var ladder: Ladder?
 
     init(
         schemaVersion: Int = WebExport.currentSchemaVersion,
         isEnabled: Bool = false,
-        naming: Naming? = nil
+        naming: Naming? = nil,
+        ladder: Ladder? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.isEnabled = isEnabled
         self.naming = naming
+        self.ladder = ladder
     }
 
     /// Decoding is deliberately lenient. A blob written by an earlier build is missing
@@ -39,6 +42,68 @@ struct WebExport: Codable, Equatable {
             ?? Self.currentSchemaVersion
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
         naming = try container.decodeIfPresent(Naming.self, forKey: .naming)
+        ladder = try container.decodeIfPresent(Ladder.self, forKey: .ladder)
+    }
+}
+
+/// A width:height pair, stored as integers because 16:9 is exact and legible where
+/// 1.7777777777777777 is neither.
+struct AspectRatio: Codable, Equatable {
+    var width: Int
+    var height: Int
+
+    var isValid: Bool { width > 0 && height > 0 }
+
+    /// The height that pairs with `width` at this ratio.
+    func height(forWidth width: Int) -> Int {
+        guard isValid else { return width }
+        return max(1, Int((Double(width) * Double(self.height) / Double(self.width)).rounded()))
+    }
+}
+
+/// One source image rendered at several widths in a single pass.
+///
+/// The ladder supplies widths; the resize mode decides what each width means. See
+/// `SizeLadder` for the expansion.
+struct Ladder: Codable, Equatable {
+    var widths: [Int]
+    var includeOriginalSize: Bool
+    /// Rungs wider than the source are dropped rather than clamped. Clamping would
+    /// produce byte-identical files under different names, because `preventEnlargement`
+    /// already caps the scale at 1.
+    var skipUpscales: Bool
+    /// Fill mode only. Stored rather than inferred from the live width and height, so a
+    /// preset does not silently change shape when those fields are edited.
+    var aspectRatio: AspectRatio?
+
+    init(
+        widths: [Int] = [400, 800, 1200, 1600],
+        includeOriginalSize: Bool = false,
+        skipUpscales: Bool = true,
+        aspectRatio: AspectRatio? = nil
+    ) {
+        self.widths = widths
+        self.includeOriginalSize = includeOriginalSize
+        self.skipUpscales = skipUpscales
+        self.aspectRatio = aspectRatio
+    }
+
+    /// Ascending, de-duplicated, positives only — so output ordering is stable and a
+    /// typo cannot produce two rungs with the same name.
+    var normalisedWidths: [Int] {
+        Array(Set(widths.filter { $0 > 0 })).sorted()
+    }
+
+    /// Lenient for the same reason `WebExport`'s is — see the note there.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Ladder()
+        widths = try container.decodeIfPresent([Int].self, forKey: .widths) ?? defaults.widths
+        includeOriginalSize = try container.decodeIfPresent(Bool.self, forKey: .includeOriginalSize)
+            ?? defaults.includeOriginalSize
+        skipUpscales = try container.decodeIfPresent(Bool.self, forKey: .skipUpscales)
+            ?? defaults.skipUpscales
+        aspectRatio = try container.decodeIfPresent(AspectRatio.self, forKey: .aspectRatio)
     }
 }
 

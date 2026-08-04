@@ -50,7 +50,6 @@ struct ResizeEngine {
     static func process(
         jobs: [ResizeJob],
         skipped: Int,
-        settings: ResizeSettings,
         control: ProcessingControl,
         onProgress: @escaping @Sendable (BatchProgress) -> Void
     ) async -> BatchResult {
@@ -64,7 +63,7 @@ struct ResizeEngine {
                     try control.checkpoint()
                     progress.currentName = job.source.lastPathComponent
                     onProgress(progress)
-                    let destination = try resize(job: job, settings: settings)
+                    let destination = try resize(job: job)
                     outputs.insert(destination.deletingLastPathComponent())
                     progress.completed += 1
                 } catch is CancellationError {
@@ -82,7 +81,8 @@ struct ResizeEngine {
         }.value
     }
 
-    static func resize(job: ResizeJob, settings: ResizeSettings) throws -> URL {
+    static func resize(job: ResizeJob) throws -> URL {
+        let settings = job.settings
         guard let source = CGImageSourceCreateWithURL(job.source as CFURL, nil),
               CGImageSourceGetCount(source) > 0 else {
             throw ResizeEngineError.unreadable(job.source)
@@ -92,7 +92,7 @@ struct ResizeEngine {
         let writableTypes = CGImageDestinationCopyTypeIdentifiers() as! [String]
         let isRaw = sourceType.map { !writableTypes.contains($0 as String) } ?? true
         if OutputType.usesWebPCodec(sourceType: sourceType, format: settings.format) {
-            return try WebPCodec.resize(source: source, isRaw: isRaw, job: job, settings: settings)
+            return try WebPCodec.resize(source: source, isRaw: isRaw, job: job)
         }
         let requestedType = OutputType.resolve(
             sourceType: sourceType,

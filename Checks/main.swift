@@ -242,4 +242,121 @@ guard let sparseWebExport = try? JSONDecoder().decode(WebExport.self, from: Data
 check(sparseWebExport.schemaVersion == WebExport.currentSchemaVersion, "web export schema fallback")
 check(!sparseWebExport.isEnabled, "web export defaults to off")
 
+// The size ladder. A rung is just ResizeSettings with different numbers, which is what
+// keeps ResizeMath, the render path and the encoders out of this feature entirely.
+private func laddered(
+    _ mode: ResizeMode,
+    widths: [Int],
+    sourceWidth: Double?,
+    sourceHeight: Double = 1_000,
+    skipUpscales: Bool = true,
+    includeOriginalSize: Bool = false,
+    aspectRatio: AspectRatio? = nil,
+    liveWidth: Int? = nil,
+    liveHeight: Int? = nil
+) -> [ResizeSettings] {
+    var value = settings(mode: mode, width: liveWidth, height: liveHeight)
+    value.webExport = WebExport(
+        isEnabled: true,
+        ladder: Ladder(
+            widths: widths,
+            includeOriginalSize: includeOriginalSize,
+            skipUpscales: skipUpscales,
+            aspectRatio: aspectRatio
+        )
+    )
+    return SizeLadder.expand(value, sourceSize: sourceWidth.map { CGSize(width: $0, height: sourceHeight) })
+}
+
+check(
+    laddered(.fit, widths: [400, 800, 1200], sourceWidth: 4_000).map(\.width) == [400, 800, 1200],
+    "fit ladder constrains width per rung"
+)
+check(
+    laddered(.fit, widths: [400, 800], sourceWidth: 4_000).allSatisfy { $0.height == nil },
+    "fit rungs leave height unconstrained so proportions follow the source"
+)
+check(
+    laddered(.longEdge, widths: [400, 800], sourceWidth: 4_000).map(\.longEdge) == [400, 800],
+    "long edge ladder sets the long edge per rung"
+)
+check(
+    laddered(.fill, widths: [400, 800], sourceWidth: 4_000, aspectRatio: AspectRatio(width: 16, height: 9))
+        .map { [$0.width, $0.height] } == [[400, 225], [800, 450]],
+    "fill ladder crops every rung to the stored ratio"
+)
+check(
+    laddered(.fill, widths: [400], sourceWidth: 4_000, liveWidth: 1_600, liveHeight: 1_600)
+        .map { [$0.width, $0.height] } == [[400, 400]],
+    "fill ladder falls back to the live width and height when no ratio is stored"
+)
+
+// Rungs wider than the source are dropped, not clamped: preventEnlargement would cap
+// them all at the source width and emit byte-identical files under different names.
+check(
+    laddered(.fit, widths: [400, 800, 1200, 1600], sourceWidth: 900).map(\.width) == [400, 800],
+    "upscaling rungs are dropped"
+)
+check(
+    laddered(.fit, widths: [400, 800], sourceWidth: 900, skipUpscales: false).map(\.width) == [400, 800],
+    "dropping can be switched off"
+)
+// An image narrower than every breakpoint must still produce a file rather than
+// vanishing from the batch without an error.
+check(
+    laddered(.fit, widths: [400, 800, 1200], sourceWidth: 320).map(\.width) == [320],
+    "a source below every rung falls back to its own width"
+)
+check(
+    laddered(.fit, widths: [400, 800], sourceWidth: 1_000, includeOriginalSize: true).map(\.width)
+        == [400, 800, 1_000],
+    "the original size can be added as a rung"
+)
+check(
+    laddered(.fit, widths: [800, 400, 800, -5, 0], sourceWidth: 4_000).map(\.width) == [400, 800],
+    "widths are sorted, de-duplicated, and stripped of nonsense"
+)
+
+// Percentage scales by a factor of the source, so there is no fixed width to ladder.
+check(!SizeLadder.applies(to: .percentage), "percentage mode has no ladder")
+check(
+    laddered(.percentage, widths: [400, 800], sourceWidth: 4_000).count == 1,
+    "percentage mode yields a single unchanged pass"
+)
+// Without a ladder the expansion has to be a no-op, so callers never branch on it.
+check(
+    SizeLadder.expand(settings(mode: .fit, width: 2_000), sourceSize: CGSize(width: 4_000, height: 2_000)).count == 1,
+    "no ladder means one pass"
+)
+// Unknown source dimensions must not drop anything — the rungs are all we know.
+check(
+    laddered(.fit, widths: [400, 800], sourceWidth: nil).map(\.width) == [400, 800],
+    "an unreadable source size keeps every rung"
+)
+
+check(AspectRatio(width: 16, height: 9).height(forWidth: 1_600) == 900, "ratio height")
+check(AspectRatio(width: 0, height: 9).height(forWidth: 800) == 800, "a nonsense ratio is ignored")
+
+// {width} and {height} name the file after the size it is actually written at.
+check(
+    OutputNaming.stem(
+        source: URL(fileURLWithPath: "/Photos/Red Chair.png"),
+        naming: Naming(template: "{slug}-{width}"),
+        filenameSuffix: "",
+        outputExtension: "jpg",
+        outputSize: CGSize(width: 800, height: 450)
+    ) == "red-chair-800",
+    "width token"
+)
+check(
+    OutputNaming.stem(
+        source: URL(fileURLWithPath: "/Photos/Red Chair.png"),
+        naming: Naming(template: "{slug}-{width}x{height}"),
+        filenameSuffix: "",
+        outputExtension: "jpg",
+        outputSize: CGSize(width: 800, height: 450)
+    ) == "red-chair-800x450",
+    "width and height tokens"
+)
+
 print("All Image Resizer checks passed.")

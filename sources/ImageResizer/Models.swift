@@ -245,15 +245,18 @@ enum ResizeMath {
     }
 }
 
-/// One source image and the exact file it will be written to.
+/// One source image, the exact file it will be written to, and the settings to render
+/// it with.
 ///
 /// `output` is fully resolved by `JobPlanner` — extension, naming template, and
-/// collision suffix included — so nothing downstream has to invent a filename. A job is
-/// therefore bound to the settings it was planned with; resizing it under different
-/// settings would write the wrong extension.
+/// collision suffix included — so nothing downstream has to invent a filename. The
+/// settings travel with the job because a size ladder turns one source into several
+/// jobs that differ only in their target dimensions, and because a resolved filename is
+/// only correct for the settings it was derived from.
 struct ResizeJob {
     let source: URL
     let output: URL
+    let settings: ResizeSettings
 }
 
 /// Decides which container type an output is written as.
