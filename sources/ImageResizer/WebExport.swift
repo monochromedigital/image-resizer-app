@@ -15,17 +15,20 @@ struct WebExport: Codable, Equatable {
     var isEnabled: Bool
     var naming: Naming?
     var ladder: Ladder?
+    var color: ColorPolicy?
 
     init(
         schemaVersion: Int = WebExport.currentSchemaVersion,
         isEnabled: Bool = false,
         naming: Naming? = nil,
-        ladder: Ladder? = nil
+        ladder: Ladder? = nil,
+        color: ColorPolicy? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.isEnabled = isEnabled
         self.naming = naming
         self.ladder = ladder
+        self.color = color
     }
 
     /// Decoding is deliberately lenient. A blob written by an earlier build is missing
@@ -43,6 +46,35 @@ struct WebExport: Codable, Equatable {
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
         naming = try container.decodeIfPresent(Naming.self, forKey: .naming)
         ladder = try container.decodeIfPresent(Ladder.self, forKey: .ladder)
+        color = try container.decodeIfPresent(ColorPolicy.self, forKey: .color)
+    }
+}
+
+/// How output colour is tagged.
+///
+/// Deliberately smaller than the original design sketched. Two of the three fields it
+/// proposed cannot vary: `ResizeEngine.render` always composites into an sRGB context,
+/// so conversion is unconditional, and a source profile is never valid for the converted
+/// pixels, so keeping one is never correct. Modelling settings that can only hold one
+/// value invites someone to change them.
+struct ColorPolicy: Codable, Equatable {
+    enum ProfileMode: String, Codable {
+        /// No profile. Every browser treats untagged as sRGB, and it is the smaller file.
+        case untagged
+        /// An explicit sRGB profile, for pipelines that require one rather than assuming.
+        case sRGB
+    }
+
+    var embedProfile: ProfileMode
+
+    init(embedProfile: ProfileMode = .sRGB) {
+        self.embedProfile = embedProfile
+    }
+
+    /// Lenient for the same reason `WebExport`'s is — see the note there.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        embedProfile = try container.decodeIfPresent(ProfileMode.self, forKey: .embedProfile) ?? .sRGB
     }
 }
 

@@ -111,9 +111,15 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
 - **Two encoding paths.** ImageIO `CGImageDestination` for JPEG/PNG/HEIC/TIFF/GIF/AVIF;
   a subprocess for WebP. Any change to output — naming, metadata, colour — usually has
   to be made **twice**, once in `ResizeEngine` and once in `WebPCodec`.
-- **`render` always targets an sRGB context**, so output pixels are already converted.
-  What is *not* handled is profile tagging — `preserveMetadata` copies the source's
-  profile properties back over the output, which can mislabel wide-gamut sources.
+- **`render` always targets an sRGB context**, so output pixels are always sRGB
+  regardless of the source. There is no way to preserve a wide-gamut pipeline, which
+  means a source's colour profile is never valid for the output.
+  ImageIO handles the tagging correctly on its own: `CGImageDestination` embeds the
+  colour space of the `CGImage` it is handed, which overrides any profile properties
+  copied by `preserveMetadata`. Verified — a Display P3 source comes out of the JPEG and
+  PNG paths tagged `sRGB IEC61966-2.1`.
+  **WebP is the exception**, because the encoder only sees raw PAM pixels and cannot know
+  the colour space. See `embedSRGBProfile`.
 - **`OutputType.isLossy` gates two separate things** — whether the quality key is set,
   and whether target-file-size bisection applies. A lossy format missing from it silently
   ignores the quality slider. Add new formats there, not to an inline comparison.
