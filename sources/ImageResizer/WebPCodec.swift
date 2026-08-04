@@ -45,9 +45,9 @@ enum WebPCodec {
             durations.append(durationMilliseconds(properties: frame.properties))
         }
 
-        let requested = job.requestedOutputURL(extension: "webp", filenameSuffix: settings.filenameSuffix)
-        try FileManager.default.createDirectory(at: requested.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let output = availableURL(for: requested)
+        // Resolved by JobPlanner along with the rest of the batch — see ResizeEngine.
+        let output = job.output
+        try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
         func encodedData(quality: Double) throws -> Data {
             let attempt = temporary.appendingPathComponent(UUID().uuidString, isDirectory: true)
             try FileManager.default.createDirectory(at: attempt, withIntermediateDirectories: true)
@@ -212,16 +212,4 @@ enum WebPCodec {
         return candidates.first { manager.isExecutableFile(atPath: $0.path) }
     }
 
-    private static func availableURL(for requested: URL) -> URL {
-        guard FileManager.default.fileExists(atPath: requested.path) else { return requested }
-        let directory = requested.deletingLastPathComponent()
-        let stem = requested.deletingPathExtension().lastPathComponent
-        let ext = requested.pathExtension
-        var number = 2
-        while true {
-            let candidate = directory.appendingPathComponent("\(stem)-\(number)").appendingPathExtension(ext)
-            if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
-            number += 1
-        }
-    }
 }

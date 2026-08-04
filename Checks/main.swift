@@ -111,21 +111,80 @@ check(
     ) == "Trips/Paris/image.jpg",
     "folder structure"
 )
-let namedJob = ResizeJob(
-    source: URL(fileURLWithPath: "/Photos/image.png"),
-    destination: URL(fileURLWithPath: "/Exports/image.png")
+// The pre-web-export naming behaviour, now expressed through Naming.legacy. These three
+// assertions are unchanged from before the refactor and are what pins it down.
+private func legacyStem(_ name: String, suffix: String) -> String {
+    OutputNaming.stem(
+        source: URL(fileURLWithPath: "/Photos/\(name)"),
+        naming: .legacy,
+        filenameSuffix: suffix,
+        outputExtension: "jpg"
+    )
+}
+check(legacyStem("image.png", suffix: "-resized") == "image-resized", "filename suffix")
+check(legacyStem("image.png", suffix: "") == "image", "blank filename suffix")
+check(legacyStem("image.png", suffix: "/web:\n") == "image-web--", "safe filename suffix")
+
+// Slugging.
+check(OutputNaming.slug("Red Chair.jpg") == "red-chair-jpg", "spaces become hyphens")
+check(OutputNaming.slug("Café Münster") == "cafe-munster", "accents transliterate")
+check(OutputNaming.slug("الكرسي الأحمر") == "alkrsy-alahmr", "arabic transliterates")
+check(OutputNaming.slug("红色椅子") == "hong-se-yi-zi", "han transliterates to pinyin")
+check(OutputNaming.slug("IMG_4821_Red_Chair") == "4821-red-chair", "camera prefix stripped")
+check(OutputNaming.slug("DSCF0001") == "dscf0001", "prefix kept when nothing nameable remains")
+check(OutputNaming.slug("  --Hello---World--  ") == "hello-world", "separator runs collapse")
+check(OutputNaming.slug("Ünïcôdé", transliterate: false) == "n-c-d", "transliteration can be off")
+check(OutputNaming.slug("a-very-long-name", maxLength: 6) == "a-very", "truncation trims trailing separators")
+
+// A stem can never be empty, or the output would be a bare extension.
+check(!OutputNaming.stem(
+    source: URL(fileURLWithPath: "/Photos/🙂🙂.png"),
+    naming: Naming(),
+    filenameSuffix: "",
+    outputExtension: "jpg"
+).isEmpty, "unnameable source still produces a stem")
+
+// Unknown tokens are dropped rather than left literal, and the leftover separator goes
+// with them. {width} arrives with the size ladder.
+check(
+    OutputNaming.expand("{slug}-{width}", values: ["slug": "chair"]) == "chair-",
+    "unknown token removed"
 )
 check(
-    namedJob.requestedOutputURL(extension: "jpg", filenameSuffix: "-resized").lastPathComponent == "image-resized.jpg",
-    "filename suffix"
+    OutputNaming.stem(
+        source: URL(fileURLWithPath: "/Photos/Red Chair.png"),
+        naming: Naming(template: "{slug}-{width}"),
+        filenameSuffix: "",
+        outputExtension: "jpg"
+    ) == "red-chair",
+    "trailing separator from an empty token is tidied away"
+)
+
+// Output type resolution has to match between JobPlanner and ResizeEngine, or files get
+// an extension that misdescribes their contents.
+check(
+    OutputType.resolve(sourceType: nil, isRaw: true, format: .original) == OutputFormat.jpeg.typeIdentifier,
+    "camera RAW keeping its original format falls back to JPEG"
 )
 check(
-    namedJob.requestedOutputURL(extension: "jpg", filenameSuffix: "").lastPathComponent == "image.jpg",
-    "blank filename suffix"
+    OutputType.resolve(
+        sourceType: "public.png" as CFString,
+        isRaw: false,
+        format: .original
+    ) == "public.png" as CFString,
+    "keep original preserves a writable source type"
 )
 check(
-    namedJob.requestedOutputURL(extension: "jpg", filenameSuffix: "/web:\n").lastPathComponent == "image-web--.jpg",
-    "safe filename suffix"
+    OutputType.fileExtension(for: "public.jpeg" as CFString, fallback: "cr3") == "jpg",
+    "jpeg extension"
+)
+check(
+    OutputType.fileExtension(for: "com.apple.something" as CFString, fallback: "CR3") == "cr3",
+    "unknown type falls back to the lowercased source extension"
+)
+check(
+    OutputType.usesWebPCodec(sourceType: "org.webmproject.webp" as CFString, format: .original),
+    "keeping the original format of a WebP routes to the WebP encoder"
 )
 check(FileSizeUnit.kilobytes.bytes(for: 500) == 512_000, "kilobyte target")
 check(FileSizeUnit.megabytes.bytes(for: 2) == 2_097_152, "megabyte target")

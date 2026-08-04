@@ -613,9 +613,12 @@ Nothing blocking. These want evidence rather than a decision:
 1. **Serial batch loop.** Becomes noticeable at ladder-and-matrix volumes. Worth
    measuring on a real batch before deciding whether to parallelise, and worth measuring
    *after* feature 2 rather than speculating now.
-2. **Default ladder widths.** `400/800/1200/1600` is a reasonable convention, not a
+2. **Default ladder widths** — `400/800/1200/1600` is a reasonable convention, not a
    researched default. Worth revisiting against what the site actually serves.
-3. **Slug transliteration coverage.** Latin accents and Arabic are specified; CJK has no
-   meaningful ASCII transliteration and will likely need a fallback to
-   `{original}`-with-index rather than producing an empty slug. Needs a decision at
-   implementation time, informed by real filenames.
+
+**Corrected during implementation:** an earlier draft of this document claimed CJK has
+no meaningful ASCII transliteration and would need a special fallback. That is wrong —
+Foundation's `StringTransform.toLatin` romanises Han to pinyin (`红色椅子` →
+`hong se yi zi`), and Arabic likewise (`الكرسي الأحمر` → `alkrsy alahmr`). The empty-stem
+fallback is still needed, but for names made entirely of emoji or punctuation rather
+than for any particular script.

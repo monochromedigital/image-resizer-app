@@ -245,21 +245,45 @@ enum ResizeMath {
     }
 }
 
+/// One source image and the exact file it will be written to.
+///
+/// `output` is fully resolved by `JobPlanner` — extension, naming template, and
+/// collision suffix included — so nothing downstream has to invent a filename. A job is
+/// therefore bound to the settings it was planned with; resizing it under different
+/// settings would write the wrong extension.
 struct ResizeJob {
     let source: URL
-    let destination: URL
+    let output: URL
+}
 
-    func requestedOutputURL(extension outputExtension: String, filenameSuffix: String) -> URL {
-        let safeSuffix = filenameSuffix.unicodeScalars.map { scalar -> String in
-            if CharacterSet.controlCharacters.contains(scalar) || scalar == "/" || scalar == ":" {
-                return "-"
-            }
-            return String(scalar)
-        }.joined()
-        let directory = destination.deletingLastPathComponent()
-        let stem = destination.deletingPathExtension().lastPathComponent
-        return directory
-            .appendingPathComponent(stem + safeSuffix)
-            .appendingPathExtension(outputExtension)
+/// Decides which container type an output is written as.
+///
+/// Shared by `JobPlanner`, which needs the extension to resolve names before encoding,
+/// and `ResizeEngine`, which needs the type to create the destination. If these two
+/// disagreed, files would be written with an extension that misdescribes their contents.
+enum OutputType {
+    static func resolve(sourceType: CFString?, isRaw: Bool, format: OutputFormat) -> CFString {
+        guard format == .original else { return format.typeIdentifier! }
+        // Camera RAW cannot be written back out, so "Keep Original" becomes JPEG.
+        return (isRaw ? OutputFormat.jpeg.typeIdentifier : sourceType) ?? OutputFormat.jpeg.typeIdentifier!
+    }
+
+    static func fileExtension(for type: CFString, fallback: String) -> String {
+        switch type as String {
+        case "public.jpeg": "jpg"
+        case "public.png": "png"
+        case "public.heic": "heic"
+        case "public.tiff": "tiff"
+        case "com.compuserve.gif": "gif"
+        case "org.webmproject.webp": "webp"
+        default: fallback.isEmpty ? "jpg" : fallback.lowercased()
+        }
+    }
+
+    /// WebP is written by the bundled command-line encoder rather than ImageIO, so the
+    /// engine has to route around `CGImageDestination` for it.
+    static func usesWebPCodec(sourceType: CFString?, format: OutputFormat) -> Bool {
+        format == .webp
+            || (format == .original && sourceType as String? == OutputFormat.webp.typeIdentifier as String?)
     }
 }
