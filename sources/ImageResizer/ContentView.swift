@@ -451,6 +451,10 @@ struct ContentView: View {
 
     private var previewText: String? {
         guard model.store.settings.isValid else { return invalidSizeText }
+        if let widths = model.store.settings.webExport?.ladder?.normalisedWidths,
+           !widths.isEmpty, SizeLadder.applies(to: model.store.mode) {
+            return "Web Export sizes: \(Ladder.formatWidths(widths)) px"
+        }
         switch model.store.mode {
         case .fit:
             let w = model.store.settings.width.map(String.init) ?? "∞"

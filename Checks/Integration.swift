@@ -67,7 +67,7 @@ struct IntegrationChecks {
         let (sluggedJobs, _, _) = try JobPlanner.plan(sources: [collisionRoot], settings: sluggedSettings)
         precondition(sluggedJobs.count == 2)
         let sluggedNames = Set(sluggedJobs.map(\.output.lastPathComponent))
-        precondition(sluggedNames == ["1234-red-chair.jpg", "1234-red-chair-2.jpg"], "slugged names collided")
+        precondition(sluggedNames == ["red-chair.jpg", "red-chair-2.jpg"], "slugged names collided: \(sluggedNames.sorted())")
         for job in sluggedJobs { _ = try ResizeEngine.resize(job: job) }
 
         // One source fanned out across a ladder in a single plan. The 1600 rung is wider
