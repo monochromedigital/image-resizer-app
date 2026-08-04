@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import ImageIO
 
 enum ResizeMode: String, CaseIterable, Identifiable, Codable {
     case fit = "Fit"
@@ -18,6 +19,7 @@ enum OutputFormat: String, CaseIterable, Identifiable, Codable {
     case tiff = "TIFF"
     case gif = "GIF"
     case webp = "WebP"
+    case avif = "AVIF"
 
     var id: String { rawValue }
 
@@ -34,6 +36,7 @@ enum OutputFormat: String, CaseIterable, Identifiable, Codable {
         case .tiff: "tiff"
         case .gif: "gif"
         case .webp: "webp"
+        case .avif: "avif"
         }
     }
 
@@ -46,8 +49,23 @@ enum OutputFormat: String, CaseIterable, Identifiable, Codable {
         case .tiff: "public.tiff" as CFString
         case .gif: "com.compuserve.gif" as CFString
         case .webp: "org.webmproject.webp" as CFString
+        case .avif: "public.avif" as CFString
         }
     }
+
+    /// The formats this Mac can actually produce.
+    ///
+    /// Derived from ImageIO at launch rather than gated on an OS version. The writable
+    /// set has grown across releases and the exact floor for some types is not
+    /// documented, so asking is both more accurate than guessing and self-maintaining.
+    /// WebP is exempt because it is written by the bundled encoder, not by ImageIO.
+    static let writable: [OutputFormat] = {
+        let types = Set(CGImageDestinationCopyTypeIdentifiers() as! [String])
+        return allCases.filter { format in
+            guard let identifier = format.typeIdentifier else { return true }
+            return format == .webp || types.contains(identifier as String)
+        }
+    }()
 }
 
 enum FileSizeUnit: String, CaseIterable, Identifiable, Codable {
@@ -279,8 +297,15 @@ enum OutputType {
         case "public.tiff": "tiff"
         case "com.compuserve.gif": "gif"
         case "org.webmproject.webp": "webp"
+        case "public.avif": "avif"
         default: fallback.isEmpty ? "jpg" : fallback.lowercased()
         }
+    }
+
+    /// Types that honour `kCGImageDestinationLossyCompressionQuality`. Anything else
+    /// ignores the quality slider, so setting it would be misleading.
+    static func isLossy(_ type: CFString) -> Bool {
+        ["public.jpeg", "public.heic", "public.avif"].contains(type as String)
     }
 
     /// WebP is written by the bundled command-line encoder rather than ImageIO, so the

@@ -237,6 +237,39 @@ struct IntegrationChecks {
         precondition(CGImageSourceGetCount(resizedGIFSource) == 2)
         try checkDimensions(resizedGIF, width: 320, height: 180)
 
+        // Guarded on the same runtime probe the format picker uses, so this check tracks
+        // whatever the build machine can actually write instead of assuming a version.
+        if OutputFormat.writable.contains(.avif) {
+            var avifSettings = settings
+            avifSettings.format = .avif
+            let (avifJobs, _, _) = try JobPlanner.plan(sources: [input], settings: avifSettings)
+            precondition(avifJobs[0].output.lastPathComponent == "landscape-resized.avif")
+            let avif = try ResizeEngine.resize(job: avifJobs[0])
+            try checkDimensions(avif, width: 320, height: 180)
+            guard let avifSource = CGImageSourceCreateWithURL(avif as CFURL, nil) else {
+                preconditionFailure("AVIF output is unreadable")
+            }
+            precondition(CGImageSourceGetType(avifSource) as String? == "public.avif")
+
+            // AVIF has to honour the quality slider; it previously applied only to JPEG
+            // and HEIC, so a regression here would silently ignore the setting.
+            var lowQuality = detailSettings
+            lowQuality.format = .avif
+            lowQuality.quality = 0.1
+            var highQuality = lowQuality
+            highQuality.quality = 0.9
+            let lowBytes = try Data(contentsOf: ResizeEngine.resize(
+                job: ResizeJob(source: detailInput, output: outputs[0].appendingPathComponent("Trips/q-low.avif"), settings: lowQuality)
+            )).count
+            let highBytes = try Data(contentsOf: ResizeEngine.resize(
+                job: ResizeJob(source: detailInput, output: outputs[0].appendingPathComponent("Trips/q-high.avif"), settings: highQuality)
+            )).count
+            precondition(lowBytes < highBytes, "AVIF ignored the quality setting: \(lowBytes) vs \(highBytes)")
+            print("AVIF round-trip and quality checks passed.")
+        } else {
+            print("AVIF is not writable on this machine; skipped its round-trip check.")
+        }
+
         if let rawFixture = ProcessInfo.processInfo.environment["IMAGE_RESIZER_RAW_FIXTURE"], !rawFixture.isEmpty {
             var rawSettings = settings
             rawSettings.width = 800
