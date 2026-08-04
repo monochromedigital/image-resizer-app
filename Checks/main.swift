@@ -416,4 +416,31 @@ check(Ladder.formatWidths([400, 800]) == "400, 800", "widths format back to text
 // Round-tripping matters: the field is rendered from whatever was parsed.
 check(Ladder.formatWidths(Ladder.parseWidths("400, 800, 1200")) == "400, 800, 1200", "widths round-trip")
 
+// Rights metadata. Title text is derived per image, so only the policy is stored.
+check(RightsWriter.humanised("IMG_4821 Café Sign") == "Cafe Sign", "filename becomes a readable title")
+check(RightsWriter.humanised("red-chair") == "Red Chair", "slug becomes a readable title")
+check(RightsWriter.humanised("🙂") == "🙂", "an unnameable stem is returned unchanged")
+check(
+    RightsWriter.resolve(.keepExisting, source: URL(fileURLWithPath: "/Photos/A Sign.jpg"), humanise: true) == nil,
+    "keepExisting writes nothing"
+)
+check(
+    RightsWriter.resolve(.empty, source: URL(fileURLWithPath: "/Photos/A Sign.jpg"), humanise: true) == nil,
+    "empty writes nothing, and removal is handled by the caller"
+)
+check(
+    RightsWriter.resolve(.fromFilename, source: URL(fileURLWithPath: "/Photos/A Sign.jpg"), humanise: true) == "A Sign",
+    "fromFilename derives a title"
+)
+
+// An empty tree must not push the engine onto its metadata-writing path.
+check(!RightsMetadata().hasContent, "an empty rights tree writes nothing")
+check(RightsMetadata(creator: "Someone").hasContent, "a creator counts as content")
+check(RightsMetadata(creator: "").hasContent == false, "a blank string is not content")
+check(RightsMetadata(titlePolicy: .fromFilename).hasContent, "a policy alone counts as content")
+check(RightsWriter.metadata(rights: RightsMetadata()) == nil, "no XMP without rights")
+check(RightsWriter.metadata(rights: RightsMetadata(creator: "Someone")) == nil, "creator alone is IPTC, not XMP")
+check(RightsWriter.metadata(rights: RightsMetadata(webStatementURL: "https://example.test")) != nil, "a web statement needs XMP")
+check(RightsWriter.xmpPacket(rights: RightsMetadata(licensorURL: "https://example.test")) != nil, "a licensor produces an XMP packet")
+
 print("All Image Resizer checks passed.")

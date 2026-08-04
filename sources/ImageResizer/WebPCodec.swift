@@ -73,6 +73,9 @@ enum WebPCodec {
             if settings.webExport?.color?.embedProfile == .sRGB {
                 try embedSRGBProfile(into: temporaryOutput, temporaryDirectory: attempt)
             }
+            if let rights = settings.webExport?.rights, rights.hasContent {
+                try embedRights(rights, into: temporaryOutput, temporaryDirectory: attempt)
+            }
             return try Data(contentsOf: temporaryOutput)
         }
 
@@ -209,6 +212,25 @@ enum WebPCodec {
         try profile.write(to: profileURL, options: .atomic)
         let tagged = temporaryDirectory.appendingPathComponent("tagged.webp")
         try run(mux, arguments: ["-set", "icc", profileURL.path, encoded.path, "-o", tagged.path])
+        try FileManager.default.removeItem(at: encoded)
+        try FileManager.default.moveItem(at: tagged, to: encoded)
+    }
+
+    /// Writes rights metadata as an XMP chunk.
+    ///
+    /// WebP carries XMP as raw bytes rather than through ImageIO, so the packet is
+    /// generated and handed to `webpmux`. This runs after `copyWebPMetadata`, so a
+    /// generated packet replaces an inherited one rather than the other way round.
+    private static func embedRights(
+        _ rights: RightsMetadata,
+        into encoded: URL,
+        temporaryDirectory: URL
+    ) throws {
+        guard let mux = tool(named: "webpmux"), let packet = RightsWriter.xmpPacket(rights: rights) else { return }
+        let packetURL = temporaryDirectory.appendingPathComponent("rights.xmp")
+        try packet.write(to: packetURL, options: .atomic)
+        let tagged = temporaryDirectory.appendingPathComponent("rights.webp")
+        try run(mux, arguments: ["-set", "xmp", packetURL.path, encoded.path, "-o", tagged.path])
         try FileManager.default.removeItem(at: encoded)
         try FileManager.default.moveItem(at: tagged, to: encoded)
     }

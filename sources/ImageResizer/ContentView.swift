@@ -266,6 +266,8 @@ struct ContentView: View {
                     ladderControls
                     Divider()
                     colourControls
+                    Divider()
+                    rightsControls
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -323,6 +325,73 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var rightsControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Rights")
+                .font(.subheadline.weight(.medium))
+            rightsField("Creator", placeholder: "Your name or studio", value: rights(\.creator))
+            rightsField("Copyright", placeholder: "© 2026 Your Name", value: rights(\.copyrightNotice))
+            rightsField("Credit", placeholder: "Photo: Your Name", value: rights(\.credit))
+            rightsField("Licence page", placeholder: "https://example.com/licence", value: rights(\.webStatementURL))
+            rightsField("Licensing page", placeholder: "https://example.com/buy", value: rights(\.licensorURL))
+            Text("Written into every exported file. URLs are stored as text — nothing is ever fetched.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("Title", selection: rightsPolicy(\.titlePolicy)) {
+                Text("Keep existing").tag(RightsMetadata.TextPolicy.keepExisting)
+                Text("From filename").tag(RightsMetadata.TextPolicy.fromFilename)
+                Text("Leave empty").tag(RightsMetadata.TextPolicy.empty)
+            }
+            .frame(maxWidth: 320)
+            Picker("Description", selection: rightsPolicy(\.descriptionPolicy)) {
+                Text("Keep existing").tag(RightsMetadata.TextPolicy.keepExisting)
+                Text("From filename").tag(RightsMetadata.TextPolicy.fromFilename)
+                Text("Leave empty").tag(RightsMetadata.TextPolicy.empty)
+            }
+            .frame(maxWidth: 320)
+            Text("Titles and descriptions differ per image, so only the rule is remembered — never the text.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func rightsField(_ title: String, placeholder: String, value: Binding<String>) -> some View {
+        HStack {
+            Text(title).frame(width: 108, alignment: .leading)
+            TextField(placeholder, text: value)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 280)
+            Spacer()
+        }
+    }
+
+    /// Optional strings bind as empty text, so a cleared field stores nothing rather than
+    /// an empty string that `hasContent` would have to special-case.
+    private func rights(_ keyPath: WritableKeyPath<RightsMetadata, String?>) -> Binding<String> {
+        Binding(
+            get: { (model.store.webExport.rights ?? RightsMetadata())[keyPath: keyPath] ?? "" },
+            set: {
+                var updated = model.store.webExport.rights ?? RightsMetadata()
+                updated[keyPath: keyPath] = $0.isEmpty ? nil : $0
+                model.store.webExport.rights = updated
+            }
+        )
+    }
+
+    private func rightsPolicy(
+        _ keyPath: WritableKeyPath<RightsMetadata, RightsMetadata.TextPolicy>
+    ) -> Binding<RightsMetadata.TextPolicy> {
+        Binding(
+            get: { (model.store.webExport.rights ?? RightsMetadata())[keyPath: keyPath] },
+            set: {
+                var updated = model.store.webExport.rights ?? RightsMetadata()
+                updated[keyPath: keyPath] = $0
+                model.store.webExport.rights = updated
+            }
+        )
     }
 
     private var colourControls: some View {
