@@ -2,11 +2,11 @@
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
-LOCAL_SDK="/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk"
+# Whatever the toolchain considers current. Pinning an older SDK here made local runs
+# disagree with CI and silently withheld frameworks added since — set IMAGE_RESIZER_SDK
+# to override. The deployment target is fixed by Package.swift, not by this.
 if [[ -n "${IMAGE_RESIZER_SDK:-}" ]]; then
   SDK="$IMAGE_RESIZER_SDK"
-elif [[ -d "$LOCAL_SDK" ]]; then
-  SDK="$LOCAL_SDK"
 else
   SDK="$(xcrun --sdk macosx --show-sdk-path)"
 fi

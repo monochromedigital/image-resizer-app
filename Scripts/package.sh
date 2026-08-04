@@ -2,11 +2,9 @@
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
-LOCAL_SDK="/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk"
+# Kept in step with Scripts/check.sh — see the note there.
 if [[ -n "${IMAGE_RESIZER_SDK:-}" ]]; then
   SDK="$IMAGE_RESIZER_SDK"
-elif [[ -d "$LOCAL_SDK" ]]; then
-  SDK="$LOCAL_SDK"
 else
   SDK="$(xcrun --sdk macosx --show-sdk-path)"
 fi
