@@ -16,19 +16,22 @@ struct WebExport: Codable, Equatable {
     var naming: Naming?
     var ladder: Ladder?
     var color: ColorPolicy?
+    var rights: RightsMetadata?
 
     init(
         schemaVersion: Int = WebExport.currentSchemaVersion,
         isEnabled: Bool = false,
         naming: Naming? = nil,
         ladder: Ladder? = nil,
-        color: ColorPolicy? = nil
+        color: ColorPolicy? = nil,
+        rights: RightsMetadata? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.isEnabled = isEnabled
         self.naming = naming
         self.ladder = ladder
         self.color = color
+        self.rights = rights
     }
 
     /// Decoding is deliberately lenient. A blob written by an earlier build is missing
@@ -47,6 +50,74 @@ struct WebExport: Codable, Equatable {
         naming = try container.decodeIfPresent(Naming.self, forKey: .naming)
         ladder = try container.decodeIfPresent(Ladder.self, forKey: .ladder)
         color = try container.decodeIfPresent(ColorPolicy.self, forKey: .color)
+        rights = try container.decodeIfPresent(RightsMetadata.self, forKey: .rights)
+    }
+}
+
+/// Ownership and licensing written into every exported file.
+///
+/// Split by what can sensibly be batch-constant. Creator, copyright, credit and the two
+/// licensing URLs describe you and are the same for every image in a run, so they live
+/// in the preset. Title and description describe one photograph each — storing their
+/// text in a preset would stamp the same caption onto forty different pictures, which is
+/// worse for search than leaving them empty — so the preset carries only a policy.
+struct RightsMetadata: Codable, Equatable {
+    enum TextPolicy: String, Codable {
+        /// Leave whatever the source already carries.
+        case keepExisting
+        /// Derive from the filename, which is worth something once slugs are clean.
+        case fromFilename
+        /// Write nothing, and remove anything inherited.
+        case empty
+    }
+
+    var creator: String?
+    var copyrightNotice: String?
+    var credit: String?
+    /// A page describing your terms. Stored and written as text; never fetched.
+    var webStatementURL: String?
+    /// Where the image can be licensed. Also never fetched.
+    var licensorURL: String?
+    var titlePolicy: TextPolicy
+    var descriptionPolicy: TextPolicy
+
+    init(
+        creator: String? = nil,
+        copyrightNotice: String? = nil,
+        credit: String? = nil,
+        webStatementURL: String? = nil,
+        licensorURL: String? = nil,
+        titlePolicy: TextPolicy = .keepExisting,
+        descriptionPolicy: TextPolicy = .keepExisting
+    ) {
+        self.creator = creator
+        self.copyrightNotice = copyrightNotice
+        self.credit = credit
+        self.webStatementURL = webStatementURL
+        self.licensorURL = licensorURL
+        self.titlePolicy = titlePolicy
+        self.descriptionPolicy = descriptionPolicy
+    }
+
+    /// Whether anything would actually be written. An empty tree should not push the
+    /// engine onto its metadata-writing path for nothing.
+    var hasContent: Bool {
+        [creator, copyrightNotice, credit, webStatementURL, licensorURL]
+            .contains { $0?.isEmpty == false }
+            || titlePolicy != .keepExisting
+            || descriptionPolicy != .keepExisting
+    }
+
+    /// Lenient for the same reason `WebExport`'s is — see the note there.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        creator = try container.decodeIfPresent(String.self, forKey: .creator)
+        copyrightNotice = try container.decodeIfPresent(String.self, forKey: .copyrightNotice)
+        credit = try container.decodeIfPresent(String.self, forKey: .credit)
+        webStatementURL = try container.decodeIfPresent(String.self, forKey: .webStatementURL)
+        licensorURL = try container.decodeIfPresent(String.self, forKey: .licensorURL)
+        titlePolicy = try container.decodeIfPresent(TextPolicy.self, forKey: .titlePolicy) ?? .keepExisting
+        descriptionPolicy = try container.decodeIfPresent(TextPolicy.self, forKey: .descriptionPolicy) ?? .keepExisting
     }
 }
 

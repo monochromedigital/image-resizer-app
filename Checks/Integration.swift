@@ -377,6 +377,70 @@ struct IntegrationChecks {
         precondition(iccData(of: tagged, scratch: root) == sRGBProfile, "explicit sRGB profile was not embedded")
         print("Colour profile checks passed.")
 
+
+        // Rights metadata is the only place the app authors metadata rather than copying
+        // it, and XMP needs a different destination call than everything else — so this
+        // reads every field back out of a real file rather than trusting the write.
+        let rights = RightsMetadata(
+            creator: "Monochrome Digital",
+            copyrightNotice: "© 2026 Monochrome Digital",
+            credit: "Photo: Monochrome Digital",
+            webStatementURL: "https://monochrome.digital/licence",
+            licensorURL: "https://monochrome.digital/licence-this",
+            titlePolicy: .fromFilename,
+            descriptionPolicy: .keepExisting
+        )
+        var rightsSettings = settings
+        rightsSettings.webExport = WebExport(isEnabled: true, rights: rights)
+        let rightsOut = try ResizeEngine.resize(job: ResizeJob(
+            source: input,
+            output: outputs[0].appendingPathComponent("Trips/rights.jpg"),
+            settings: rightsSettings
+        ))
+        guard let rightsSource = CGImageSourceCreateWithURL(rightsOut as CFURL, nil),
+              let rightsProperties = CGImageSourceCopyPropertiesAtIndex(rightsSource, 0, nil) as? [CFString: Any],
+              let iptc = rightsProperties[kCGImagePropertyIPTCDictionary] as? [CFString: Any] else {
+            preconditionFailure("rights output carries no IPTC")
+        }
+        precondition((iptc[kCGImagePropertyIPTCByline] as? [String]) == ["Monochrome Digital"], "byline")
+        precondition((iptc[kCGImagePropertyIPTCCopyrightNotice] as? String) == "© 2026 Monochrome Digital", "copyright")
+        precondition((iptc[kCGImagePropertyIPTCCredit] as? String) == "Photo: Monochrome Digital", "credit")
+        // landscape.png, slugged and humanised.
+        precondition((iptc[kCGImagePropertyIPTCObjectName] as? String) == "Landscape", "title from filename")
+
+        var xmp: [String: String] = [:]
+        if let metadata = CGImageSourceCopyMetadataAtIndex(rightsSource, 0, nil) {
+            CGImageMetadataEnumerateTagsUsingBlock(metadata, nil, [kCGImageMetadataEnumerateRecursively: true] as CFDictionary) { path, tag in
+                if let value = CGImageMetadataTagCopyValue(tag) as? String { xmp[path as String] = value }
+                return true
+            }
+        }
+        precondition(xmp["xmpRights:WebStatement"] == "https://monochrome.digital/licence", "web statement: \(xmp)")
+        precondition(xmp["plus:Licensor[0].LicensorURL"] == "https://monochrome.digital/licence-this", "licensor: \(xmp)")
+        // ImageIO mirrors IPTC into XMP on its own, so dc:creator arrives without being set.
+        precondition(xmp["dc:creator[0]"] == "Monochrome Digital", "creator mirrored into XMP")
+
+        // The same fields have to survive the target-size path, which pre-renders frames
+        // and encodes into memory rather than straight to the destination.
+        var rightsTargetSettings = detailSettings
+        rightsTargetSettings.webExport = rightsSettings.webExport
+        rightsTargetSettings.targetFileSizeEnabled = true
+        rightsTargetSettings.targetFileSizeBytes = 200_000
+        let rightsTarget = try ResizeEngine.resize(job: ResizeJob(
+            source: detailInput,
+            output: outputs[0].appendingPathComponent("Trips/rights-target.jpg"),
+            settings: rightsTargetSettings
+        ))
+        guard let targetSource = CGImageSourceCreateWithURL(rightsTarget as CFURL, nil),
+              let targetProperties = CGImageSourceCopyPropertiesAtIndex(targetSource, 0, nil) as? [CFString: Any],
+              let targetIPTC = targetProperties[kCGImagePropertyIPTCDictionary] as? [CFString: Any] else {
+            preconditionFailure("target-size rights output carries no IPTC")
+        }
+        precondition((targetIPTC[kCGImagePropertyIPTCCredit] as? String) == "Photo: Monochrome Digital", "credit survives bisection")
+        // Derived from the source, not the output — the output name carries a ladder width.
+        precondition((targetIPTC[kCGImagePropertyIPTCObjectName] as? String) == "Detail", "title comes from the source filename")
+        print("Rights metadata checks passed.")
+
         if let rawFixture = ProcessInfo.processInfo.environment["IMAGE_RESIZER_RAW_FIXTURE"], !rawFixture.isEmpty {
             var rawSettings = settings
             rawSettings.width = 800

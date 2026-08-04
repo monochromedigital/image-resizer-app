@@ -116,6 +116,7 @@ struct ResizeEngine {
            let targetBytes = settings.targetFileSizeBytes {
             return try resizeToTargetSize(
                 source: source,
+                sourceURL: job.source,
                 isRaw: isRaw,
                 outputURL: outputURL,
                 outputType: requestedType,
@@ -156,7 +157,15 @@ struct ResizeEngine {
             if OutputType.isLossy(requestedType) {
                 outputProperties[kCGImageDestinationLossyCompressionQuality] = settings.quality
             }
-            CGImageDestinationAddImage(destination, rendered, outputProperties as CFDictionary)
+            applyRights(to: &outputProperties, settings: settings, source: job.source)
+            // XMP has no property-dictionary equivalent, so writing xmpRights:WebStatement
+            // or plus:Licensor means a different destination call. Only taken when there
+            // is XMP to write — AddImage stays the path for everything else.
+            if let metadata = rightsMetadata(for: settings) {
+                CGImageDestinationAddImageAndMetadata(destination, rendered, metadata, outputProperties as CFDictionary)
+            } else {
+                CGImageDestinationAddImage(destination, rendered, outputProperties as CFDictionary)
+            }
         }
 
         guard CGImageDestinationFinalize(destination) else {
@@ -175,6 +184,7 @@ struct ResizeEngine {
     /// transparency out of AVIF and HEIC output.
     private static func resizeToTargetSize(
         source: CGImageSource,
+        sourceURL: URL,
         isRaw: Bool,
         outputURL: URL,
         outputType: CFString,
@@ -202,6 +212,7 @@ struct ResizeEngine {
             properties[kCGImagePropertyPixelWidth] = Int(frame.layout.outputSize.width)
             properties[kCGImagePropertyPixelHeight] = Int(frame.layout.outputSize.height)
             if settings.removeLocation { removeLocation(from: &properties) }
+            applyRights(to: &properties, settings: settings, source: sourceURL)
             frames.append(Frame(image: rendered, properties: properties))
         }
 
@@ -224,10 +235,15 @@ struct ResizeEngine {
             if !containerProperties.isEmpty {
                 CGImageDestinationSetProperties(destination, containerProperties as CFDictionary)
             }
+            let metadata = rightsMetadata(for: settings)
             for frame in frames {
                 var properties = frame.properties
                 properties[kCGImageDestinationLossyCompressionQuality] = quality
-                CGImageDestinationAddImage(destination, frame.image, properties as CFDictionary)
+                if let metadata {
+                    CGImageDestinationAddImageAndMetadata(destination, frame.image, metadata, properties as CFDictionary)
+                } else {
+                    CGImageDestinationAddImage(destination, frame.image, properties as CFDictionary)
+                }
             }
             guard CGImageDestinationFinalize(destination) else {
                 throw ResizeEngineError.cannotWrite(outputURL)
@@ -387,6 +403,23 @@ struct ResizeEngine {
         case 7: context.translateBy(x: w, y: h); context.rotate(by: .pi / 2); context.scaleBy(x: -1, y: 1)
         case 8: context.translateBy(x: 0, y: h); context.rotate(by: -.pi / 2)
         default: break
+        }
+    }
+
+    private static func rightsMetadata(for settings: ResizeSettings) -> CGImageMetadata? {
+        guard let rights = settings.webExport?.rights, rights.hasContent else { return nil }
+        return RightsWriter.metadata(rights: rights)
+    }
+
+    private static func applyRights(
+        to properties: inout [CFString: Any],
+        settings: ResizeSettings,
+        source: URL
+    ) {
+        guard let rights = settings.webExport?.rights, rights.hasContent else { return }
+        let existing = properties[kCGImagePropertyIPTCDictionary] as? [CFString: Any]
+        if let iptc = RightsWriter.iptcDictionary(existing: existing, rights: rights, source: source) {
+            properties[kCGImagePropertyIPTCDictionary] = iptc
         }
     }
 

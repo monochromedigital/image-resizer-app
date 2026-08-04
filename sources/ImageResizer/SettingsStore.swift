@@ -121,6 +121,7 @@ final class SettingsStore: ObservableObject {
             if newValue {
                 updated.naming = updated.naming ?? Naming()
                 updated.color = updated.color ?? ColorPolicy()
+                updated.rights = updated.rights ?? RightsMetadata()
             }
             webExport = updated
         }
