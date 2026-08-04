@@ -359,4 +359,22 @@ check(
     "width and height tokens"
 )
 
+// AVIF. Whether this machine can write it is a runtime fact, not an OS-version one, so
+// the format list is derived from ImageIO rather than gated on #available.
+check(OutputType.fileExtension(for: "public.avif" as CFString, fallback: "png") == "avif", "avif extension")
+check(OutputFormat.avif.preferredExtension == "avif", "avif preferred extension")
+check(OutputFormat.avif.typeIdentifier as String? == "public.avif", "avif type identifier")
+check(OutputType.isLossy("public.avif" as CFString), "avif is lossy")
+check(OutputType.isLossy("public.heic" as CFString), "heic is lossy")
+check(!OutputType.isLossy("public.png" as CFString), "png is not lossy")
+check(OutputFormat.writable.contains(.original), "keep original is always offered")
+// ImageIO cannot write WebP — the bundled encoder does — so it must survive the filter.
+check(OutputFormat.writable.contains(.webp), "webp survives the ImageIO filter")
+check(OutputFormat.writable.allSatisfy { OutputFormat.allCases.contains($0) }, "writable is a subset")
+if OutputFormat.writable.contains(.avif) {
+    print("AVIF is writable on this machine.")
+} else {
+    print("AVIF is not writable on this machine; the format picker will omit it.")
+}
+
 print("All Image Resizer checks passed.")

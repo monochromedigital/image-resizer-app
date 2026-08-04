@@ -36,7 +36,10 @@ final class SettingsStore: ObservableObject {
         percentageText = defaults.string(forKey: "percentage") ?? "50"
         preventEnlargement = defaults.object(forKey: "preventEnlargement") as? Bool ?? true
         filenameSuffix = defaults.string(forKey: "filenameSuffix") ?? "-resized"
-        format = OutputFormat(rawValue: defaults.string(forKey: "format") ?? "") ?? .original
+        let storedFormat = OutputFormat(rawValue: defaults.string(forKey: "format") ?? "") ?? .original
+        // A format this Mac cannot write would leave the picker showing an empty
+        // selection, so fall back rather than stranding the user on it.
+        format = OutputFormat.writable.contains(storedFormat) ? storedFormat : .original
         quality = defaults.object(forKey: "quality") as? Double ?? 0.9
         targetFileSizeEnabled = defaults.bool(forKey: "targetFileSizeEnabled")
         targetFileSizeText = defaults.string(forKey: "targetFileSize") ?? "500"

@@ -152,7 +152,7 @@ struct ResizeEngine {
             outputProperties[kCGImagePropertyPixelWidth] = Int(frame.layout.outputSize.width)
             outputProperties[kCGImagePropertyPixelHeight] = Int(frame.layout.outputSize.height)
             if settings.removeLocation { removeLocation(from: &outputProperties) }
-            if requestedType == OutputFormat.jpeg.typeIdentifier || requestedType == OutputFormat.heic.typeIdentifier {
+            if OutputType.isLossy(requestedType) {
                 outputProperties[kCGImageDestinationLossyCompressionQuality] = settings.quality
             }
             CGImageDestinationAddImage(destination, rendered, outputProperties as CFDictionary)

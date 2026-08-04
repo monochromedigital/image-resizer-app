@@ -179,13 +179,13 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Picker("Format", selection: binding(\.format)) {
-                        ForEach(OutputFormat.allCases) { format in Text(format.rawValue).tag(format) }
+                        ForEach(OutputFormat.writable) { format in Text(format.rawValue).tag(format) }
                     }
                     .frame(maxWidth: 290)
                     Spacer()
                 }
 
-                if model.store.format == .jpeg || model.store.format == .heic || model.store.format == .webp || model.store.format == .original {
+                if model.store.format != .png && model.store.format != .tiff && model.store.format != .gif {
                     HStack {
                         Text(targetFileSizeIsActive ? "Maximum quality" : "Quality")
                         Slider(value: binding(\.quality), in: 0.1...1, step: 0.01)
