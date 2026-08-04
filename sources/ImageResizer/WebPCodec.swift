@@ -70,6 +70,9 @@ enum WebPCodec {
                     removeLocation: settings.removeLocation
                 )
             }
+            if settings.webExport?.color?.embedProfile == .sRGB {
+                try embedSRGBProfile(into: temporaryOutput, temporaryDirectory: attempt)
+            }
             return try Data(contentsOf: temporaryOutput)
         }
 
@@ -172,7 +175,12 @@ enum WebPCodec {
     ) throws {
         guard let mux = tool(named: "webpmux") else { return }
         var current = encoded
-        let chunks = removeLocation ? ["icc"] : ["icc", "exif", "xmp"]
+        // The source ICC profile is deliberately not copied. Frames are composited into
+        // an sRGB context before encoding, so the source's profile describes colours the
+        // output no longer contains — copying it made a P3 source come back as sRGB
+        // pixels wearing a P3 tag, which every browser then re-expands into the wrong
+        // colours. Tagging is handled by `embedSRGBProfile` instead.
+        let chunks = removeLocation ? [] : ["exif", "xmp"]
         for chunk in chunks {
             let chunkFile = temporaryDirectory.appendingPathComponent("metadata.\(chunk)")
             guard (try? run(mux, arguments: ["-get", chunk, source.path, "-o", chunkFile.path])) != nil,
@@ -186,6 +194,23 @@ enum WebPCodec {
             try FileManager.default.removeItem(at: encoded)
             try FileManager.default.moveItem(at: current, to: encoded)
         }
+    }
+
+    /// Writes an explicit sRGB profile into the encoded file.
+    ///
+    /// Untagged WebP is already interpreted as sRGB by every browser, so this exists for
+    /// pipelines that require a profile rather than assuming one. ImageIO formats get
+    /// this for free — `CGImageDestination` embeds the colour space of the image it is
+    /// handed — but the WebP encoder only sees raw PAM pixels and has no idea.
+    private static func embedSRGBProfile(into encoded: URL, temporaryDirectory: URL) throws {
+        guard let mux = tool(named: "webpmux"),
+              let profile = CGColorSpace(name: CGColorSpace.sRGB)?.copyICCData() as Data? else { return }
+        let profileURL = temporaryDirectory.appendingPathComponent("srgb.icc")
+        try profile.write(to: profileURL, options: .atomic)
+        let tagged = temporaryDirectory.appendingPathComponent("tagged.webp")
+        try run(mux, arguments: ["-set", "icc", profileURL.path, encoded.path, "-o", tagged.path])
+        try FileManager.default.removeItem(at: encoded)
+        try FileManager.default.moveItem(at: tagged, to: encoded)
     }
 
     private static func run(_ executable: URL, arguments: [String]) throws {

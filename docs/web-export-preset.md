@@ -1,6 +1,7 @@
 # Web Export — preset data model
 
-Status: **proposal**. No implementation has started.
+Status: **partially implemented**. Features 1–4 have shipped; 5–7 are still proposals.
+Corrections made once code met reality are in §10.
 
 Covers the data model for seven features that make Image Resizer output web- and
 SEO-ready:
@@ -137,11 +138,12 @@ struct FormatPlan: Codable, Equatable {
 }
 
 // 4 — Colour
+// Shipped smaller than this. convertToSRGB and stripSourceProfile cannot vary — render
+// always composites into an sRGB context, and a source profile is never valid for the
+// converted pixels — so only the tagging choice remains. See §10.
 struct ColorPolicy: Codable, Equatable {
-    enum ProfileMode: String, Codable { case none, sRGB }
-    var convertToSRGB: Bool = true
+    enum ProfileMode: String, Codable { case untagged, sRGB }
     var embedProfile: ProfileMode = .sRGB
-    var stripSourceProfile: Bool = true
 }
 
 // 5 — Rights metadata
@@ -622,3 +624,27 @@ Foundation's `StringTransform.toLatin` romanises Han to pinyin (`红色椅子` �
 `hong se yi zi`), and Arabic likewise (`الكرسي الأحمر` → `alkrsy alahmr`). The empty-stem
 fallback is still needed, but for names made entirely of emoji or punctuation rather
 than for any particular script.
+
+---
+
+## 10. Corrections from implementation
+
+Recorded so the document does not keep asserting things the code has since disproved.
+
+**Force-sRGB was half a no-op and half a real bug, not the uniform defect this document
+assumed.** The original text said `preserveMetadata` copies the source profile back over
+the output and mislabels wide-gamut sources on both encoding paths. Measuring it showed:
+
+- **ImageIO path — already correct.** `CGImageDestination` embeds the colour space of the
+  `CGImage` it is given, which overrides the copied profile properties. A Display P3
+  source comes out of the JPEG and PNG paths tagged `sRGB IEC61966-2.1`.
+- **WebP path — genuinely broken.** `copyWebPMetadata` copied the source's `icc` chunk
+  verbatim onto pixels that had already been converted to sRGB. A P3-tagged WebP resized
+  to WebP produced sRGB pixels carrying a byte-identical Display P3 profile, which any
+  browser re-expands into visibly wrong colours. Fixed by never copying the source
+  profile, plus an opt-in explicit sRGB tag.
+
+**`ColorPolicy` shipped with one field instead of three.** `convertToSRGB` and
+`stripSourceProfile` can only ever hold one value — the engine cannot preserve a
+wide-gamut pipeline, and a source profile is never valid for converted pixels. Modelling
+a setting that cannot vary invites someone to change it and expect something to happen.

@@ -330,6 +330,53 @@ struct IntegrationChecks {
         }
 
 
+
+        // Colour tagging. Frames are always composited into an sRGB context, so a source
+        // profile describes colours the output no longer contains. Copying it made a
+        // Display P3 source come back as sRGB pixels wearing a P3 tag, which browsers
+        // then re-expand into visibly wrong colours.
+        let p3Profile = CGColorSpace(name: CGColorSpace.displayP3)!.copyICCData()! as Data
+        let sRGBProfile = CGColorSpace(name: CGColorSpace.sRGB)!.copyICCData()! as Data
+        let p3ProfileURL = root.appendingPathComponent("p3.icc")
+        try p3Profile.write(to: p3ProfileURL)
+
+        var plainWebPSettings = settings
+        plainWebPSettings.format = .webp
+        let plainWebP = try ResizeEngine.resize(job: ResizeJob(
+            source: input,
+            output: outputs[0].appendingPathComponent("Trips/colour-source.webp"),
+            settings: plainWebPSettings
+        ))
+        let taggedSource = root.appendingPathComponent("p3-source.webp")
+        precondition(
+            webpmux(["-set", "icc", p3ProfileURL.path, plainWebP.path, "-o", taggedSource.path]),
+            "could not build a P3-tagged WebP fixture"
+        )
+        precondition(iccData(of: taggedSource, scratch: root) == p3Profile, "fixture lost its P3 tag")
+
+        // Default: the stale profile must not survive. Untagged is correct — every
+        // browser reads untagged WebP as sRGB.
+        let untagged = try ResizeEngine.resize(job: ResizeJob(
+            source: taggedSource,
+            output: outputs[0].appendingPathComponent("Trips/colour-untagged.webp"),
+            settings: plainWebPSettings
+        ))
+        precondition(
+            iccData(of: untagged, scratch: root) != p3Profile,
+            "resized WebP kept the source Display P3 profile over sRGB pixels"
+        )
+
+        // Opting in writes an explicit sRGB profile instead.
+        var taggedSettings = plainWebPSettings
+        taggedSettings.webExport = WebExport(isEnabled: true, color: ColorPolicy(embedProfile: .sRGB))
+        let tagged = try ResizeEngine.resize(job: ResizeJob(
+            source: taggedSource,
+            output: outputs[0].appendingPathComponent("Trips/colour-srgb.webp"),
+            settings: taggedSettings
+        ))
+        precondition(iccData(of: tagged, scratch: root) == sRGBProfile, "explicit sRGB profile was not embedded")
+        print("Colour profile checks passed.")
+
         if let rawFixture = ProcessInfo.processInfo.environment["IMAGE_RESIZER_RAW_FIXTURE"], !rawFixture.isEmpty {
             var rawSettings = settings
             rawSettings.width = 800
@@ -380,6 +427,26 @@ struct IntegrationChecks {
         }
 
         print("Image round-trip, target file size, filename suffix, resize modes, no-enlargement, collision, WebP, animated WebP, animated GIF, and RAW-path checks passed.")
+    }
+
+    /// Runs the bundled webpmux and reports whether the chunk existed.
+    @discardableResult
+    static func webpmux(_ arguments: [String]) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Vendor/WebPTools/webpmux")
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    }
+
+    static func iccData(of webp: URL, scratch: URL) -> Data? {
+        let extracted = scratch.appendingPathComponent("probe-\(UUID().uuidString).icc")
+        guard webpmux(["-get", "icc", webp.path, "-o", extracted.path]) else { return nil }
+        return try? Data(contentsOf: extracted)
     }
 
     static func makeTransparentPNG(at url: URL, width: Int, height: Int) throws {
