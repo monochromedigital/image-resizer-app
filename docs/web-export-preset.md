@@ -29,6 +29,10 @@ validated against a remote host.
 | 4 | Rights metadata splits into **batch-constant** fields (in the preset) and **per-image** text (Title/Description, policy only in the preset). |
 | 5 | Alt text uses **Vision on macOS 14** as the floor, with Foundation Models gated behind `#available(macOS 26, *)`. Deployment target stays at 14. |
 
+Secondary decisions taken during design — AVIF availability and target-sizing, ladder
+upscale behaviour, Fill-mode ratios, and the per-image metadata editor — are recorded
+with their reasoning in [§8](#8-resolved-decisions).
+
 ---
 
 ## 1. The type
@@ -109,10 +113,16 @@ struct Naming: Codable, Equatable {
 }
 
 // 2 — Responsive size ladder
+struct AspectRatio: Codable, Equatable {
+    var width: Int                          // 16
+    var height: Int                         // 9
+}
+
 struct Ladder: Codable, Equatable {
     var widths: [Int] = [400, 800, 1200, 1600]
     var includeOriginalSize: Bool = false
     var skipUpscales: Bool = true           // drop rungs wider than the source
+    var aspectRatio: AspectRatio?           // Fill mode only; nil = use live width:height
 }
 
 // 3 — Output formats, ordered for <picture>
@@ -312,7 +322,7 @@ func expand(_ settings: ResizeSettings, sourceSize: CGSize?) -> [ResizeSettings]
   `JobPlanner.swift`.
 - Progress accounting keeps working; the total is just larger.
 
-**Two details this surfaces:**
+**Three details this surfaces:**
 
 - **`skipUpscales` needs the source pixel size at plan time.**
   `JobPlanner.isReadableImage` already opens a `CGImageSource` and discards it. It would
@@ -321,6 +331,19 @@ func expand(_ settings: ResizeSettings, sourceSize: CGSize?) -> [ResizeSettings]
   `preventEnlargement` flag clamps scale to ≤ 1, so a 500px-wide source against a
   400/800/1200 ladder would silently produce 400/500/500 — two identical files with
   different names. Rungs wider than the source have to be removed from the plan.
+- **Dropping must never empty the plan.** If *every* rung exceeds the source — a 320px
+  image against a 400/800/1200/1600 ladder — naive dropping emits zero files and the
+  image vanishes from the batch with no error. Rule: when all rungs are dropped, emit a
+  single rendition at the source's native width. An image that is smaller than your
+  smallest breakpoint still needs to exist on the page.
+
+**Fill mode takes an explicit ratio.** `Ladder.aspectRatio` is stored in the preset
+rather than inferred from the live width/height fields. Inferring makes a preset depend
+on two fields it doesn't own: apply the preset, edit the width, and the ladder silently
+changes shape with no indication that it did. `nil` keeps the inferring behaviour so the
+UI can still offer "use current ratio", but a saved preset should write the ratio down.
+An `Int` pair rather than a `Double` because 16:9 is exact and legible in JSON, and
+because users think in ratios.
 
 ---
 
@@ -380,12 +403,36 @@ why `WebPCodec` shells out.
   `unsupportedOutput` on systems that can't write it, so older macOS degrades to a
   readable error rather than crashing.
 
-**Open:** `supportsTargetFileSize` — AVIF is lossy, so target-file-size *should* apply,
-but the bisection branch is hardcoded to `requestedType == jpeg`. Either generalise it
-to any lossy ImageIO type or leave AVIF out of target-sizing in the first pass.
+**Availability: probe at runtime, do not hardcode a version floor.** The macOS version
+that first supports writing `public.avif` could not be determined from the SDKs — the
+15.4 SDK contains no AVIF `UTType` symbol at all, which says nothing definitive about
+ImageIO's runtime writable-type list. Rather than research a number and bake in a
+possibly-wrong `#available`, derive it from
+`CGImageDestinationCopyTypeIdentifiers()` at launch and **filter the format picker** to
+what the running system can actually write. This is strictly more correct than a version
+check, needs no version research, costs one `Set<String>` computed once, and generalises
+— the same list should arguably gate HEIC too. The engine's existing `unsupportedOutput`
+guard stays as the backstop.
 
-**Unverified:** which macOS version first added AVIF **write**. Needs pinning down before
-we promise AVIF on the macOS 14 floor.
+**Target file size: generalise the bisection.** `targetSizedData` is *already* generic —
+it takes an `encode: (Double) throws -> Data` closure. Only its caller,
+`resizeJPEGToTarget`, is JPEG-specific, along with the branch condition
+`requestedType == OutputFormat.jpeg.typeIdentifier`. Parameterising the output type is a
+small change, and deferring it means editing the same two places twice.
+
+Verified that AVIF responds to `kCGImageDestinationLossyCompressionQuality`
+monotonically, so bisection converges:
+
+```
+public.avif   q0.1 = 24,453 B    q0.5 = 140,092 B    q0.9 = 257,783 B
+public.heic   q0.1 = 35,303 B    q0.5 =  99,582 B    q0.9 = 202,160 B
+```
+
+The HEIC row is an **existing gap**, not a new one: HEIC is lossy and the quality slider
+already applies to it, but `OutputFormat.supportsTargetFileSize` returns `true` only for
+JPEG and WebP. Generalising fixes AVIF and HEIC in the same change. It gets its own PR
+rather than riding along with AVIF, because it touches the shared encode path that WebP
+also uses.
 
 ### 4. Force-sRGB → `ResizeEngine.swift` + `WebPCodec.swift`
 
@@ -417,6 +464,22 @@ The first feature that **authors** metadata rather than copying it.
 
 Title/Description arrive per-image per the policy in `RightsMetadata`; the preset never
 carries their text.
+
+**No manual per-image editor in this feature.** Feature 5 ships with Title and
+Description driven entirely by policy — `keepExisting`, `fromFilename`, `fromAltText`,
+`empty` — and no typing. The reason is structural rather than a matter of scope: **the
+sidebar lists dropped sources, and a source can be a folder.** A folder of 200 images is
+one row. An inspector attached to that list cannot reach per-image granularity without
+first expanding folders into a full browsable file tree, which is a substantially larger
+UI change than the metadata feature it would be serving.
+
+The alternative — a post-batch review step — is worse, because the files are already
+written by then and every edit means a second metadata write pass over the output.
+
+The policies cover the actual SEO need on their own: `fromFilename` is genuinely useful
+once slugs are clean (feature 1), and `fromAltText` is the intended path (feature 7).
+Manual editing becomes its own feature with its own design, once there's evidence people
+want to hand-write captions for batches.
 
 ### 6. Sidecars → new file, e.g. `SidecarWriter.swift`
 
@@ -492,7 +555,8 @@ Each row is one PR off `main`. The order is a dependency order, not a preference
 | 0 | Widen `ResizePreset`, add `WebExport` shell, preset apply/persist | — | No behaviour change; pure groundwork |
 | 1 | Slugification + plan-time name resolution | 0 | Also de-duplicates `availableURL` |
 | 2 | Responsive ladder | 0, 1 | Pure `expand`; needs source size at plan time |
-| 3 | AVIF output | 0 | Independent of 1 and 2 |
+| 3 | AVIF output + runtime writable-format probe | 0 | Independent of 1 and 2 |
+| 3b | Generalise target file size to any lossy type | 3 | Fixes AVIF **and** the existing HEIC gap |
 | 4 | Force-sRGB | — | Smallest; independent; could go anytime |
 | 5 | IPTC/XMP write-back | 0 | Riskiest; changes the destination write call |
 | 6 | Sidecars | 1, 2, 3 | Needs the full resolved plan |
@@ -501,21 +565,57 @@ Each row is one PR off `main`. The order is a dependency order, not a preference
 PR 0 is worth doing on its own precisely because it changes no behaviour — it lands the
 type and the persistence, and every later PR is then additive.
 
+PR 4 (force-sRGB) has no dependencies at all and is the smallest of the set. It is a
+reasonable thing to land first if something is wanted in users' hands quickly, since it
+fixes a real existing defect — wide-gamut sources currently get their source profile
+copied back over sRGB pixels, on both the ImageIO and WebP paths.
+
 ---
 
-## 7. Open questions
+## 7. Output volume in the UI
 
-1. **AVIF target-file-size** — generalise the quality bisection to any lossy ImageIO
-   type, or exclude AVIF from target-sizing initially?
-2. **AVIF write floor** — which macOS version first supports writing `public.avif`?
-   Determines whether it can be offered on the macOS 14 deployment target.
-3. **Output volume** — 20 images × 4 rungs × 3 formats is 240 files through a **serial**
-   batch loop, with every WebP file a separate `img2webp` subprocess. Parallelising the
-   loop is out of scope here, but the UI should show the multiplication
-   ("20 images → 240 files") before the user commits.
-4. **Per-image Title/Description UI** — this design defines the slot and defers the
-   editor. Worth deciding whether it's an inspector in the sidebar or a post-batch
-   review step before feature 5 ships.
-5. **Ladder in Fill mode** — the aspect ratio is inferred from the width/height fields.
-   Should the preset store an explicit ratio instead, so a preset isn't silently
-   dependent on two unrelated text fields?
+20 images × 4 rungs × 3 formats is 240 files through a **serial** batch loop, with every
+WebP file a separate `img2webp` subprocess writing intermediate `.pam` frames to disk.
+That run is slow, and nothing in the current UI hints at it before you commit.
+
+Parallelising the batch loop is out of scope for this work, but the multiplication should
+be visible. The complication is that a true total needs a full plan — walking every
+dropped folder — which is too expensive for a label that updates as you type.
+
+**Resolution, in two parts:**
+
+- **Before starting**, show the per-image *multiplier*, which is free to compute from
+  settings alone and needs no filesystem access: `4 sizes × 3 formats = 12 files per
+  image`.
+- **After planning**, the real total already flows into `BatchProgress.total`, so the
+  existing progress readout reports it with no new machinery.
+
+That gives an honest warning at zero cost and an exact number as soon as one is
+available.
+
+## 8. Resolved decisions
+
+Everything previously open has been settled. Recorded here with reasoning, since these
+are the points most likely to be re-litigated mid-implementation.
+
+| Question | Resolution | Why |
+|---|---|---|
+| AVIF target file size | Generalise the bisection; separate PR (3b) | `targetSizedData` is already generic — only its caller is JPEG-specific. Verified AVIF responds monotonically to the quality key. Also fixes the pre-existing HEIC gap. |
+| AVIF version floor | Don't hardcode one — probe `CGImageDestinationCopyTypeIdentifiers()` at launch and filter the format picker | Strictly more correct than an `#available` guess, needs no version research, and the engine already has the backstop. The 15.4 SDK carries no AVIF `UTType` symbol, so the SDKs can't answer the question anyway. |
+| `skipUpscales` clamp vs drop | Drop — and if *all* rungs drop, emit one rendition at native width | Clamping produces byte-identical files under different names. Dropping without the floor rule makes small images vanish silently. |
+| Fill-mode aspect ratio | Store explicitly in the preset as an `Int` pair; `nil` falls back to live fields | A preset depending on two fields it doesn't own changes shape silently when those fields are edited. |
+| Per-image Title/Description editor | Defer entirely; feature 5 ships policy-only | The sidebar lists *sources*, and a source can be a folder — an inspector can't reach per-image granularity without building a file browser first. Policies cover the real SEO need. |
+
+## 9. Still genuinely open
+
+Nothing blocking. These want evidence rather than a decision:
+
+1. **Serial batch loop.** Becomes noticeable at ladder-and-matrix volumes. Worth
+   measuring on a real batch before deciding whether to parallelise, and worth measuring
+   *after* feature 2 rather than speculating now.
+2. **Default ladder widths.** `400/800/1200/1600` is a reasonable convention, not a
+   researched default. Worth revisiting against what the site actually serves.
+3. **Slug transliteration coverage.** Latin accents and Arabic are specified; CJK has no
+   meaningful ASCII transliteration and will likely need a fallback to
+   `{original}`-with-index rather than producing an empty slug. Needs a decision at
+   implementation time, informed by real filenames.
