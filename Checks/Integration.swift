@@ -38,19 +38,41 @@ struct IntegrationChecks {
         let (jobs, outputs, skipped) = try JobPlanner.plan(sources: [sourceRoot], settings: settings)
         precondition(jobs.count == 1 && skipped == 0)
         precondition(outputs.first?.lastPathComponent == "Source - Resized")
-        precondition(jobs[0].destination.path.contains("Source - Resized/Trips/landscape.png"))
+        // The planner resolves the whole path up front: source folder structure, the
+        // suffix, and the JPEG extension the settings imply.
+        precondition(jobs[0].output.path.contains("Source - Resized/Trips/landscape-resized.jpg"))
 
         let first = try ResizeEngine.resize(job: jobs[0], settings: settings)
         precondition(first.lastPathComponent == "landscape-resized.jpg")
         try checkDimensions(first, width: 320, height: 180)
 
-        let second = try ResizeEngine.resize(job: jobs[0], settings: settings)
+        // Replanning the same source now that the first output exists must step around
+        // it. Collision resolution moved to plan time, so this is a planner assertion.
+        let (replanned, _, _) = try JobPlanner.plan(sources: [sourceRoot], settings: settings)
+        precondition(replanned[0].output.lastPathComponent == "landscape-resized-2.jpg")
+        let second = try ResizeEngine.resize(job: replanned[0], settings: settings)
         precondition(second.lastPathComponent == "landscape-resized-2.jpg")
         try checkDimensions(second, width: 320, height: 180)
 
+        // Two sources that slug to the same stem inside one batch must not collide with
+        // each other either — this is the case the old filesystem probe could not see,
+        // because neither file exists when the names are chosen.
+        let collisionRoot = root.appendingPathComponent("Collide", isDirectory: true)
+        try manager.createDirectory(at: collisionRoot, withIntermediateDirectories: true)
+        try makePNG(at: collisionRoot.appendingPathComponent("IMG_1234 Red Chair.png"), width: 40, height: 40, red: 0.4, green: 0.2, blue: 0.6)
+        try makePNG(at: collisionRoot.appendingPathComponent("img-1234-red-chair.png"), width: 40, height: 40, red: 0.6, green: 0.2, blue: 0.4)
+        var sluggedSettings = settings
+        sluggedSettings.filenameSuffix = ""
+        sluggedSettings.webExport = WebExport(isEnabled: true, naming: Naming())
+        let (sluggedJobs, _, _) = try JobPlanner.plan(sources: [collisionRoot], settings: sluggedSettings)
+        precondition(sluggedJobs.count == 2)
+        let sluggedNames = Set(sluggedJobs.map(\.output.lastPathComponent))
+        precondition(sluggedNames == ["1234-red-chair.jpg", "1234-red-chair-2.jpg"], "slugged names collided")
+        for job in sluggedJobs { _ = try ResizeEngine.resize(job: job, settings: sluggedSettings) }
+
         let smallInput = nested.appendingPathComponent("small.png")
         try makePNG(at: smallInput, width: 80, height: 40, red: 0.25, green: 0.7, blue: 0.35)
-        let smallJob = ResizeJob(source: smallInput, destination: outputs[0].appendingPathComponent("Trips/small.png"))
+        let smallJob = ResizeJob(source: smallInput, output: outputs[0].appendingPathComponent("Trips/small-resized.jpg"))
         let protected = try ResizeEngine.resize(job: smallJob, settings: settings)
         precondition(protected.lastPathComponent == "small-resized.jpg")
         try checkDimensions(protected, width: 80, height: 40)
@@ -58,7 +80,7 @@ struct IntegrationChecks {
         var blankSuffixSettings = settings
         blankSuffixSettings.filenameSuffix = ""
         let blankSuffix = try ResizeEngine.resize(
-            job: ResizeJob(source: smallInput, destination: outputs[0].appendingPathComponent("Trips/blank.png")),
+            job: ResizeJob(source: smallInput, output: outputs[0].appendingPathComponent("Trips/blank.jpg")),
             settings: blankSuffixSettings
         )
         precondition(blankSuffix.lastPathComponent == "blank.jpg")
@@ -72,7 +94,7 @@ struct IntegrationChecks {
         var fillSettings = settings
         fillSettings.mode = .fill
         let filled = try ResizeEngine.resize(
-            job: ResizeJob(source: input, destination: outputs[0].appendingPathComponent("Trips/fill.png")),
+            job: ResizeJob(source: input, output: outputs[0].appendingPathComponent("Trips/fill.jpg")),
             settings: fillSettings
         )
         try checkDimensions(filled, width: 320, height: 320)
@@ -81,7 +103,7 @@ struct IntegrationChecks {
         longEdgeSettings.mode = .longEdge
         longEdgeSettings.longEdge = 200
         let longEdge = try ResizeEngine.resize(
-            job: ResizeJob(source: input, destination: outputs[0].appendingPathComponent("Trips/long-edge.png")),
+            job: ResizeJob(source: input, output: outputs[0].appendingPathComponent("Trips/long-edge.jpg")),
             settings: longEdgeSettings
         )
         try checkDimensions(longEdge, width: 200, height: 113)
@@ -90,7 +112,7 @@ struct IntegrationChecks {
         percentageSettings.mode = .percentage
         percentageSettings.percentage = 50
         let percentage = try ResizeEngine.resize(
-            job: ResizeJob(source: input, destination: outputs[0].appendingPathComponent("Trips/percentage.png")),
+            job: ResizeJob(source: input, output: outputs[0].appendingPathComponent("Trips/percentage.jpg")),
             settings: percentageSettings
         )
         try checkDimensions(percentage, width: 320, height: 180)
@@ -102,7 +124,7 @@ struct IntegrationChecks {
         detailSettings.height = 800
         detailSettings.quality = 0.95
         let baselineJPEG = try ResizeEngine.resize(
-            job: ResizeJob(source: detailInput, destination: outputs[0].appendingPathComponent("Trips/detail-baseline.png")),
+            job: ResizeJob(source: detailInput, output: outputs[0].appendingPathComponent("Trips/detail-baseline.jpg")),
             settings: detailSettings
         )
         let baselineJPEGBytes = try Data(contentsOf: baselineJPEG).count
@@ -110,7 +132,7 @@ struct IntegrationChecks {
         targetJPEGSettings.targetFileSizeEnabled = true
         targetJPEGSettings.targetFileSizeBytes = baselineJPEGBytes / 2
         let targetJPEG = try ResizeEngine.resize(
-            job: ResizeJob(source: detailInput, destination: outputs[0].appendingPathComponent("Trips/detail-target.png")),
+            job: ResizeJob(source: detailInput, output: outputs[0].appendingPathComponent("Trips/detail-target.jpg")),
             settings: targetJPEGSettings
         )
         let targetJPEGBytes = try Data(contentsOf: targetJPEG).count
@@ -123,7 +145,7 @@ struct IntegrationChecks {
         impossibleSettings.targetFileSizeBytes = 1
         do {
             _ = try ResizeEngine.resize(
-                job: ResizeJob(source: detailInput, destination: outputs[0].appendingPathComponent("Trips/detail-impossible.png")),
+                job: ResizeJob(source: detailInput, output: outputs[0].appendingPathComponent("Trips/detail-impossible.jpg")),
                 settings: impossibleSettings
             )
             preconditionFailure("An impossible file-size limit should fail")
@@ -131,9 +153,14 @@ struct IntegrationChecks {
             precondition(bytes == 1)
         }
 
+        // Replanned rather than reusing jobs[0]: a job's output extension is fixed by the
+        // settings it was planned with, so it cannot be reused under a different format.
         var webPSettings = settings
         webPSettings.format = .webp
-        let webP = try ResizeEngine.resize(job: jobs[0], settings: webPSettings)
+        let (webPJobs, _, _) = try JobPlanner.plan(sources: [input], settings: webPSettings)
+        precondition(webPJobs.count == 1)
+        precondition(webPJobs[0].output.lastPathComponent == "landscape-resized.webp")
+        let webP = try ResizeEngine.resize(job: webPJobs[0], settings: webPSettings)
         precondition(webP.lastPathComponent == "landscape-resized.webp")
         try checkDimensions(webP, width: 320, height: 180)
         guard let webPSource = CGImageSourceCreateWithURL(webP as CFURL, nil) else {
@@ -144,14 +171,14 @@ struct IntegrationChecks {
         var detailWebPSettings = detailSettings
         detailWebPSettings.format = .webp
         let baselineWebP = try ResizeEngine.resize(
-            job: ResizeJob(source: detailInput, destination: outputs[0].appendingPathComponent("Trips/detail-webp-baseline.png")),
+            job: ResizeJob(source: detailInput, output: outputs[0].appendingPathComponent("Trips/detail-webp-baseline.webp")),
             settings: detailWebPSettings
         )
         let baselineWebPBytes = try Data(contentsOf: baselineWebP).count
         detailWebPSettings.targetFileSizeEnabled = true
         detailWebPSettings.targetFileSizeBytes = baselineWebPBytes / 2
         let targetWebP = try ResizeEngine.resize(
-            job: ResizeJob(source: detailInput, destination: outputs[0].appendingPathComponent("Trips/detail-webp-target.png")),
+            job: ResizeJob(source: detailInput, output: outputs[0].appendingPathComponent("Trips/detail-webp-target.webp")),
             settings: detailWebPSettings
         )
         let targetWebPBytes = try Data(contentsOf: targetWebP).count
@@ -162,7 +189,7 @@ struct IntegrationChecks {
         let redInput = nested.appendingPathComponent("red.png")
         try makePNG(at: redInput, width: 640, height: 360, red: 0.9, green: 0.15, blue: 0.1)
         let redWebP = try ResizeEngine.resize(
-            job: ResizeJob(source: redInput, destination: outputs[0].appendingPathComponent("Trips/red.png")),
+            job: ResizeJob(source: redInput, output: outputs[0].appendingPathComponent("Trips/red.webp")),
             settings: webPSettings
         )
         let animation = nested.appendingPathComponent("animation.webp")
@@ -175,7 +202,7 @@ struct IntegrationChecks {
         var originalWebPSettings = settings
         originalWebPSettings.format = .original
         let resizedAnimation = try ResizeEngine.resize(
-            job: ResizeJob(source: animation, destination: outputs[0].appendingPathComponent("Trips/animation.webp")),
+            job: ResizeJob(source: animation, output: outputs[0].appendingPathComponent("Trips/animation-resized.webp")),
             settings: originalWebPSettings
         )
         guard let resizedAnimationSource = CGImageSourceCreateWithURL(resizedAnimation as CFURL, nil) else {
@@ -187,7 +214,7 @@ struct IntegrationChecks {
         let gif = nested.appendingPathComponent("animation.gif")
         try makeAnimatedGIF(frames: [input, redInput], output: gif)
         let resizedGIF = try ResizeEngine.resize(
-            job: ResizeJob(source: gif, destination: outputs[0].appendingPathComponent("Trips/animation.gif")),
+            job: ResizeJob(source: gif, output: outputs[0].appendingPathComponent("Trips/animation-resized.gif")),
             settings: originalWebPSettings
         )
         guard let resizedGIFSource = CGImageSourceCreateWithURL(resizedGIF as CFURL, nil) else {
@@ -202,19 +229,23 @@ struct IntegrationChecks {
             rawSettings.height = 1200
             rawSettings.format = .original
             let rawInput = URL(fileURLWithPath: rawFixture)
-            let rawOutput = try ResizeEngine.resize(
-                job: ResizeJob(source: rawInput, destination: outputs[0].appendingPathComponent(rawInput.lastPathComponent)),
-                settings: rawSettings
-            )
+            // Planned rather than hand-built, so this exercises the planner recognising
+            // an unwritable source type and resolving the extension to jpg before any
+            // decoding happens. Custom destination keeps output inside the fixture tree.
+            rawSettings.useCustomDestination = true
+            rawSettings.customDestination = root
+            let (rawJobs, _, _) = try JobPlanner.plan(sources: [rawInput], settings: rawSettings)
+            precondition(rawJobs.count == 1)
+            precondition(rawJobs[0].output.lastPathComponent == "\(rawInput.deletingPathExtension().lastPathComponent)-resized.jpg")
+            let rawOutput = try ResizeEngine.resize(job: rawJobs[0], settings: rawSettings)
             try checkDimensions(rawOutput, width: 800, height: 1199)
             try checkImageIsNotBlack(rawOutput)
-            precondition(rawOutput.lastPathComponent == "\(rawInput.deletingPathExtension().lastPathComponent)-resized.jpg")
 
             var rawTargetSettings = rawSettings
             rawTargetSettings.targetFileSizeEnabled = true
             rawTargetSettings.targetFileSizeBytes = try Data(contentsOf: rawOutput).count
             let rawTargetOutput = try ResizeEngine.resize(
-                job: ResizeJob(source: rawInput, destination: outputs[0].appendingPathComponent("raw-target.\(rawInput.pathExtension)")),
+                job: ResizeJob(source: rawInput, output: outputs[0].appendingPathComponent("raw-target.jpg")),
                 settings: rawTargetSettings
             )
             let rawTargetBytes = try Data(contentsOf: rawTargetOutput).count
@@ -227,7 +258,7 @@ struct IntegrationChecks {
             rawFillSettings.width = 800
             rawFillSettings.height = 800
             let rawFillOutput = try ResizeEngine.resize(
-                job: ResizeJob(source: rawInput, destination: outputs[0].appendingPathComponent("raw-fill.\(rawInput.pathExtension)")),
+                job: ResizeJob(source: rawInput, output: outputs[0].appendingPathComponent("raw-fill.jpg")),
                 settings: rawFillSettings
             )
             try checkDimensions(rawFillOutput, width: 800, height: 800)
@@ -235,13 +266,11 @@ struct IntegrationChecks {
 
             var rawWebPSettings = rawSettings
             rawWebPSettings.format = .webp
-            let rawWebPOutput = try ResizeEngine.resize(
-                job: ResizeJob(source: rawInput, destination: outputs[0].appendingPathComponent(rawInput.lastPathComponent)),
-                settings: rawWebPSettings
-            )
+            let (rawWebPJobs, _, _) = try JobPlanner.plan(sources: [rawInput], settings: rawWebPSettings)
+            precondition(rawWebPJobs[0].output.lastPathComponent == "\(rawInput.deletingPathExtension().lastPathComponent)-resized.webp")
+            let rawWebPOutput = try ResizeEngine.resize(job: rawWebPJobs[0], settings: rawWebPSettings)
             try checkDimensions(rawWebPOutput, width: 800, height: 1199)
             try checkImageIsNotBlack(rawWebPOutput)
-            precondition(rawWebPOutput.lastPathComponent == "\(rawInput.deletingPathExtension().lastPathComponent)-resized.webp")
             print("Optional camera RAW fixture check passed.")
         }
 

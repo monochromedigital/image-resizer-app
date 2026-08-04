@@ -91,31 +91,25 @@ struct ResizeEngine {
         let sourceType = CGImageSourceGetType(source)
         let writableTypes = CGImageDestinationCopyTypeIdentifiers() as! [String]
         let isRaw = sourceType.map { !writableTypes.contains($0 as String) } ?? true
-        let wantsWebP = settings.format == .webp
-            || (settings.format == .original && sourceType as String? == OutputFormat.webp.typeIdentifier as String?)
-        if wantsWebP {
+        if OutputType.usesWebPCodec(sourceType: sourceType, format: settings.format) {
             return try WebPCodec.resize(source: source, isRaw: isRaw, job: job, settings: settings)
         }
-        let requestedType: CFString = {
-            if settings.format == .original {
-                return (isRaw ? OutputFormat.jpeg.typeIdentifier : sourceType) ?? OutputFormat.jpeg.typeIdentifier!
-            }
-            return settings.format.typeIdentifier!
-        }()
+        let requestedType = OutputType.resolve(
+            sourceType: sourceType,
+            isRaw: isRaw,
+            format: settings.format
+        )
         guard writableTypes.contains(requestedType as String) else {
             throw ResizeEngineError.unsupportedOutput(settings.format.rawValue)
         }
 
-        let outputExtension = extensionFor(type: requestedType, fallback: job.source.pathExtension)
-        let requestedURL = job.requestedOutputURL(
-            extension: outputExtension,
-            filenameSuffix: settings.filenameSuffix
-        )
+        // The filename was decided by JobPlanner, which resolved collisions across the
+        // whole batch. The engine only has to make sure the folder exists.
+        let outputURL = job.output
         try FileManager.default.createDirectory(
-            at: requestedURL.deletingLastPathComponent(),
+            at: outputURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        let outputURL = availableURL(for: requestedURL)
 
         if requestedType == OutputFormat.jpeg.typeIdentifier,
            settings.targetFileSizeEnabled,
@@ -391,28 +385,4 @@ struct ResizeEngine {
         properties.removeValue(forKey: kCGImagePropertyGPSDictionary)
     }
 
-    private static func availableURL(for requested: URL) -> URL {
-        guard FileManager.default.fileExists(atPath: requested.path) else { return requested }
-        let directory = requested.deletingLastPathComponent()
-        let stem = requested.deletingPathExtension().lastPathComponent
-        let ext = requested.pathExtension
-        var number = 2
-        while true {
-            let candidate = directory.appendingPathComponent("\(stem)-\(number)").appendingPathExtension(ext)
-            if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
-            number += 1
-        }
-    }
-
-    private static func extensionFor(type: CFString, fallback: String) -> String {
-        switch type as String {
-        case "public.jpeg": "jpg"
-        case "public.png": "png"
-        case "public.heic": "heic"
-        case "public.tiff": "tiff"
-        case "com.compuserve.gif": "gif"
-        case "org.webmproject.webp": "webp"
-        default: fallback.isEmpty ? "jpg" : fallback.lowercased()
-        }
-    }
 }
