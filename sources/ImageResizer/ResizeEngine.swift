@@ -111,13 +111,14 @@ struct ResizeEngine {
             withIntermediateDirectories: true
         )
 
-        if requestedType == OutputFormat.jpeg.typeIdentifier,
+        if OutputType.isLossy(requestedType),
            settings.targetFileSizeEnabled,
            let targetBytes = settings.targetFileSizeBytes {
-            return try resizeJPEGToTarget(
+            return try resizeToTargetSize(
                 source: source,
                 isRaw: isRaw,
                 outputURL: outputURL,
+                outputType: requestedType,
                 targetBytes: targetBytes,
                 settings: settings
             )
@@ -165,10 +166,18 @@ struct ResizeEngine {
         return outputURL
     }
 
-    private static func resizeJPEGToTarget(
+    /// Bisects quality until the encoded file fits `targetBytes`.
+    ///
+    /// Works for any type that honours the lossy-quality key; `targetSizedData` was
+    /// always generic and only this caller was tied to JPEG. Passing `outputType` through
+    /// also matters for correctness rather than tidiness: `render` decides whether to
+    /// keep an alpha channel from it, and hardcoding JPEG here would have flattened
+    /// transparency out of AVIF and HEIC output.
+    private static func resizeToTargetSize(
         source: CGImageSource,
         isRaw: Bool,
         outputURL: URL,
+        outputType: CFString,
         targetBytes: Int,
         settings: ResizeSettings
     ) throws -> URL {
@@ -186,7 +195,7 @@ struct ResizeEngine {
                 target: frame.layout.outputSize,
                 drawRect: frame.layout.drawRect,
                 settings: settings,
-                outputType: OutputFormat.jpeg.typeIdentifier!
+                outputType: outputType
             )
             var properties = settings.preserveMetadata ? (frame.properties ?? [:]) : [:]
             properties[kCGImagePropertyOrientation] = 1
@@ -208,7 +217,7 @@ struct ResizeEngine {
             let encoded = NSMutableData()
             guard let destination = CGImageDestinationCreateWithData(
                 encoded as CFMutableData,
-                OutputFormat.jpeg.typeIdentifier!,
+                outputType,
                 frames.count,
                 nil
             ) else { throw ResizeEngineError.cannotWrite(outputURL) }

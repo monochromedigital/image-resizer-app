@@ -48,7 +48,7 @@ See [RELEASING.md](RELEASING.md) for the full release mechanics.
 
 ```
 Package.swift            swift-tools 5.10, macOS 14+, one executable target
-sources/ImageResizer/    all app code, 9 flat files, no subdirectories
+sources/ImageResizer/    all app code, 12 flat files, no subdirectories
 Checks/                  the real test suite (see Testing below)
 Tests/ImageResizerTests/ NOT built — see Testing below
 Scripts/                 check.sh, package.sh, release.sh, ci-release.sh, make-icns.js
@@ -80,9 +80,12 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
 
 | File | Holds |
 |---|---|
-| `Models.swift` | Every value type. `ResizeSettings` (the settings bundle passed down), `ResizePreset`, `ResizeJob`, `BatchProgress`/`BatchResult`, the format/mode enums, and `ResizeMath` (pure layout math). No I/O, no UIKit/SwiftUI. |
-| `JobPlanner.swift` | Enumerates source files and folders into `[ResizeJob]`, decides output directory names, skips unreadable files. Pure-ish; touches FileManager and ImageIO for readability probing. |
-| `ResizeEngine.swift` | The pipeline. `resize(job:settings:)` is the core: open source → pick output type → render frames → write via `CGImageDestination`. Also the serial batch loop, the JPEG quality bisection, and `ProcessingControl` (lock-based pause/cancel). |
+| `Models.swift` | Every value type. `ResizeSettings` (the settings bundle), `ResizePreset`, `ResizeJob`, `BatchProgress`/`BatchResult`, the format/mode enums, `OutputType` (container-type resolution), and `ResizeMath` (pure layout math). No file I/O. |
+| `WebExport.swift` | The web-export config tree: `WebExport` plus its per-feature sub-structs (`Naming`, `Ladder`, `AspectRatio`). All `Codable`, all leniently decoded. |
+| `OutputNaming.swift` | Filename construction — slugging, transliteration, `{token}` templates — plus `NameReservations`, which hands out collision-free output URLs. |
+| `SizeLadder.swift` | `expand(_:sourceSize:)`: one `ResizeSettings` in, one per ladder rung out. Pure. |
+| `JobPlanner.swift` | Enumerates sources into `[ResizeJob]`, **resolves every output filename**, decides output directory names, skips unreadable files. Touches FileManager and ImageIO. |
+| `ResizeEngine.swift` | The pipeline. `resize(job:)` is the core: open source → pick output type → render frames → write via `CGImageDestination`. Also the serial batch loop, the quality bisection, and `ProcessingControl` (lock-based pause/cancel). |
 | `WebPCodec.swift` | WebP output. ImageIO cannot *write* WebP, so this renders frames to intermediate `.pam` files in a temp dir and shells out to the bundled `img2webp`; `webpmux` copies ICC/EXIF/XMP chunks. |
 | `SettingsStore.swift` | ~21 `@Published` properties, each `didSet { save() }`, persisted as discrete `UserDefaults` keys. Computed `var settings: ResizeSettings` adapts them for the layers below. |
 | `ResizeViewModel.swift` | `@MainActor`. Source list, batch start/pause/cancel, progress, `NSOpenPanel` presentation, Finder reveal. |
@@ -94,18 +97,26 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
 
 - **One job → one output file.** `ResizeEngine.resize` returns a single `URL`, and
   `progress.completed += 1` counts jobs. Anything that fans one source out to several
-  outputs should fan out in `JobPlanner` (producing more `ResizeJob`s), not inside the
+  outputs fans out in `JobPlanner`, producing more `ResizeJob`s — that is how the size
+  ladder works, and it is why the engine needed no changes for it.
+- **Filenames are resolved at plan time, not during encoding.** `JobPlanner` fills in
+  `ResizeJob.output` completely: extension, naming template, and collision suffix.
+  `NameReservations` checks both the batch's own reservations and the disk, so two
+  sources that slug to the same stem cannot collide. Don't reintroduce naming in the
   engine.
+- **A `ResizeJob` carries its own `ResizeSettings`** and is only valid for them — its
+  resolved filename was derived from them. Don't resize a job under different settings.
 - **The batch loop is serial.** `ResizeEngine.process` is a plain `for` over jobs on one
   detached task. Fine today; it becomes noticeable if output volume multiplies.
 - **Two encoding paths.** ImageIO `CGImageDestination` for JPEG/PNG/HEIC/TIFF/GIF/AVIF;
   a subprocess for WebP. Any change to output — naming, metadata, colour — usually has
   to be made **twice**, once in `ResizeEngine` and once in `WebPCodec`.
-- **`availableURL` is duplicated** in `ResizeEngine.swift` and `WebPCodec.swift`. If you
-  touch collision naming, de-duplicate rather than editing both.
 - **`render` always targets an sRGB context**, so output pixels are already converted.
   What is *not* handled is profile tagging — `preserveMetadata` copies the source's
   profile properties back over the output, which can mislabel wide-gamut sources.
+- **`OutputType.isLossy` gates two separate things** — whether the quality key is set,
+  and whether target-file-size bisection applies. A lossy format missing from it silently
+  ignores the quality slider. Add new formats there, not to an inline comparison.
 - **Metadata is copy-through only.** `preserveMetadata` copies container and per-frame
   properties; `removeLocation` deletes exactly one key
   (`kCGImagePropertyGPSDictionary`). There is no metadata *authoring* path. For WebP,
@@ -144,8 +155,9 @@ of sync. Don't add coverage there expecting it to run.
 (`ci-release.sh` runs `check.sh` then `package.sh`). `check.sh` does not use SwiftPM. It
 invokes `swiftc` directly, twice, over a **hand-listed set of files**:
 
-1. **Unit checks** — compiles `Models.swift` + `JobPlanner.swift` + `Checks/main.swift`.
-   Pure math and string assertions; `check(_:_:)` exits non-zero on failure.
+1. **Unit checks** — compiles `Models.swift`, `WebExport.swift`, `OutputNaming.swift`,
+   `SizeLadder.swift`, `JobPlanner.swift` + `Checks/main.swift`. Pure math, string, and
+   `Codable` assertions; `check(_:_:)` exits non-zero on failure.
 2. **Integration checks** — adds `ResizeEngine.swift` + `WebPCodec.swift` +
    `Checks/Integration.swift`. Generates PNG fixtures and round-trips them through the
    real engine, asserting on dimensions, filename suffixes and collision naming, all
