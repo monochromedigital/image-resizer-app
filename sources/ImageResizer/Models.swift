@@ -84,6 +84,9 @@ struct ResizeSettings: Equatable {
     var backgroundBlue: Double
     var useCustomDestination: Bool
     var customDestination: URL?
+    /// Present only while web export is switched on; `nil` means a plain resize.
+    /// Defaulted so the memberwise initialiser stays source-compatible.
+    var webExport: WebExport? = nil
 
     var isValid: Bool {
         let validSize = switch mode {
@@ -98,11 +101,25 @@ struct ResizeSettings: Equatable {
     }
 }
 
+/// A named set of setting overrides.
+///
+/// Every field is optional and `nil` means "leave the current value alone", so a preset
+/// asserts only what it cares about. Presets saved before a field existed decode with
+/// that field `nil` and keep behaving exactly as they did.
 struct ResizePreset: Identifiable, Codable, Equatable {
     let id: UUID
     var name: String
     var width: Int?
     var height: Int?
+    var mode: ResizeMode?
+    var longEdge: Int?
+    var percentage: Int?
+    var preventEnlargement: Bool?
+    var format: OutputFormat?
+    var quality: Double?
+    var preserveMetadata: Bool?
+    var removeLocation: Bool?
+    var webExport: WebExport?
 
     init(id: UUID = UUID(), name: String, width: Int?, height: Int?) {
         self.id = id

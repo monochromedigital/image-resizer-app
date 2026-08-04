@@ -16,6 +16,7 @@ OUTPUT="$ROOT/.build-checks/ImageResizerChecks"
 mkdir -p "${OUTPUT:h}" "$MODULE_CACHE"
 SDKROOT="$SDK" CLANG_MODULE_CACHE_PATH="$MODULE_CACHE" swiftc \
   "$ROOT/Sources/ImageResizer/Models.swift" \
+  "$ROOT/Sources/ImageResizer/WebExport.swift" \
   "$ROOT/Sources/ImageResizer/JobPlanner.swift" \
   "$ROOT/Checks/main.swift" \
   -o "$OUTPUT"
@@ -24,6 +25,7 @@ SDKROOT="$SDK" CLANG_MODULE_CACHE_PATH="$MODULE_CACHE" swiftc \
 INTEGRATION="$ROOT/.build-checks/ImageResizerIntegrationChecks"
 SDKROOT="$SDK" CLANG_MODULE_CACHE_PATH="$MODULE_CACHE" swiftc -parse-as-library \
   "$ROOT/Sources/ImageResizer/Models.swift" \
+  "$ROOT/Sources/ImageResizer/WebExport.swift" \
   "$ROOT/Sources/ImageResizer/JobPlanner.swift" \
   "$ROOT/Sources/ImageResizer/ResizeEngine.swift" \
   "$ROOT/Sources/ImageResizer/WebPCodec.swift" \

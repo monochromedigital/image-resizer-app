@@ -22,6 +22,7 @@ final class SettingsStore: ObservableObject {
     @Published var backgroundGreen: Double { didSet { save() } }
     @Published var backgroundBlue: Double { didSet { save() } }
     @Published var presets: [ResizePreset] { didSet { savePresets() } }
+    @Published var webExport: WebExport { didSet { saveWebExport() } }
 
     private let defaults: UserDefaults
     private var isLoading = true
@@ -57,6 +58,12 @@ final class SettingsStore: ObservableObject {
                 ResizePreset(name: "4K", width: 3840, height: 2160)
             ]
         }
+        if let data = defaults.data(forKey: "webExport"),
+           let decoded = try? JSONDecoder().decode(WebExport.self, from: data) {
+            webExport = decoded
+        } else {
+            webExport = WebExport()
+        }
         isLoading = false
     }
 
@@ -79,13 +86,28 @@ final class SettingsStore: ObservableObject {
             backgroundGreen: backgroundGreen,
             backgroundBlue: backgroundBlue,
             useCustomDestination: useCustomDestination,
-            customDestination: customDestination
+            customDestination: customDestination,
+            webExport: webExport.isEnabled ? webExport : nil
         )
     }
 
+    /// Assigns every field the preset asserts, leaving `nil` fields untouched.
+    ///
+    /// `webExport` is replaced wholesale rather than merged field by field: partially
+    /// merging a nested tree produces combinations nobody configured — half of the last
+    /// run's settings and half of the preset's.
     func apply(_ preset: ResizePreset) {
-        widthText = preset.width.map(String.init) ?? ""
-        heightText = preset.height.map(String.init) ?? ""
+        if let width = preset.width { widthText = String(width) }
+        if let height = preset.height { heightText = String(height) }
+        if let longEdge = preset.longEdge { longEdgeText = String(longEdge) }
+        if let percentage = preset.percentage { percentageText = String(percentage) }
+        if let mode = preset.mode { self.mode = mode }
+        if let preventEnlargement = preset.preventEnlargement { self.preventEnlargement = preventEnlargement }
+        if let format = preset.format { self.format = format }
+        if let quality = preset.quality { self.quality = quality }
+        if let preserveMetadata = preset.preserveMetadata { self.preserveMetadata = preserveMetadata }
+        if let removeLocation = preset.removeLocation { self.removeLocation = removeLocation }
+        if let webExport = preset.webExport { self.webExport = webExport }
     }
 
     func addPreset(name: String) {
@@ -134,5 +156,13 @@ final class SettingsStore: ObservableObject {
     private func savePresets() {
         guard !isLoading, let data = try? JSONEncoder().encode(presets) else { return }
         defaults.set(data, forKey: "presets")
+    }
+
+    /// Stored as one JSON blob rather than the discrete keys the flat settings use.
+    /// The tree is deep enough that a key per leaf would be unmanageable, and it keeps
+    /// the live value the same type as the one a preset carries.
+    private func saveWebExport() {
+        guard !isLoading, let data = try? JSONEncoder().encode(webExport) else { return }
+        defaults.set(data, forKey: "webExport")
     }
 }

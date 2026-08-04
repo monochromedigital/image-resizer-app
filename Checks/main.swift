@@ -140,4 +140,47 @@ targetSettings.format = .webp
 targetSettings.targetFileSizeBytes = nil
 check(!targetSettings.isValid, "missing target size")
 
+// Presets saved by builds that predate web export must keep loading. SettingsStore
+// discards a preset blob that fails to decode, so a regression here silently wipes
+// every preset the user has saved.
+let legacyPresetJSON = Data("""
+[{"id":"6F9619FF-8B86-D011-B42D-00CF4FC964FF","name":"4K","width":3840,"height":2160}]
+""".utf8)
+guard let legacyPresets = try? JSONDecoder().decode([ResizePreset].self, from: legacyPresetJSON),
+      let legacyPreset = legacyPresets.first else {
+    FileHandle.standardError.write(Data("FAILED: legacy preset JSON no longer decodes\n".utf8))
+    exit(1)
+}
+check(legacyPreset.name == "4K", "legacy preset name")
+check(legacyPreset.width == 3840 && legacyPreset.height == 2160, "legacy preset dimensions")
+check(
+    legacyPreset.mode == nil && legacyPreset.format == nil && legacyPreset.quality == nil
+        && legacyPreset.preventEnlargement == nil && legacyPreset.webExport == nil,
+    "legacy preset asserts nothing it never knew about"
+)
+
+var fullPreset = ResizePreset(name: "Web Export", width: 1_600, height: nil)
+fullPreset.mode = .fit
+fullPreset.format = .webp
+fullPreset.quality = 0.82
+fullPreset.preventEnlargement = true
+fullPreset.preserveMetadata = true
+fullPreset.removeLocation = true
+fullPreset.webExport = WebExport(isEnabled: true)
+guard let encodedPreset = try? JSONEncoder().encode(fullPreset),
+      let roundTrippedPreset = try? JSONDecoder().decode(ResizePreset.self, from: encodedPreset) else {
+    FileHandle.standardError.write(Data("FAILED: preset round-trip threw\n".utf8))
+    exit(1)
+}
+check(roundTrippedPreset == fullPreset, "preset round-trip")
+
+// A blob written before a field was added is missing that key. Decoding has to fall
+// back to defaults rather than throw, because SettingsStore drops what it cannot read.
+guard let sparseWebExport = try? JSONDecoder().decode(WebExport.self, from: Data("{}".utf8)) else {
+    FileHandle.standardError.write(Data("FAILED: WebExport rejects a blob with missing keys\n".utf8))
+    exit(1)
+}
+check(sparseWebExport.schemaVersion == WebExport.currentSchemaVersion, "web export schema fallback")
+check(!sparseWebExport.isEnabled, "web export defaults to off")
+
 print("All Image Resizer checks passed.")
