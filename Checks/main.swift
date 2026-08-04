@@ -130,7 +130,11 @@ check(OutputNaming.slug("Red Chair.jpg") == "red-chair-jpg", "spaces become hyph
 check(OutputNaming.slug("Café Münster") == "cafe-munster", "accents transliterate")
 check(OutputNaming.slug("الكرسي الأحمر") == "alkrsy-alahmr", "arabic transliterates")
 check(OutputNaming.slug("红色椅子") == "hong-se-yi-zi", "han transliterates to pinyin")
-check(OutputNaming.slug("IMG_4821_Red_Chair") == "4821-red-chair", "camera prefix stripped")
+check(OutputNaming.slug("IMG_4821_Red_Chair") == "red-chair", "camera prefix and its frame number stripped")
+check(OutputNaming.slug("IMG_4821 Café Sign") == "cafe-sign", "prefix, frame number, and accents together")
+// Dropping the number must not leave nothing behind.
+check(OutputNaming.slug("IMG_4821") == "img-4821", "a bare frame number keeps the prefix")
+check(OutputNaming.slug("2024 Annual Report") == "2024-annual-report", "leading digits without a camera prefix are kept")
 check(OutputNaming.slug("DSCF0001") == "dscf0001", "prefix kept when nothing nameable remains")
 check(OutputNaming.slug("  --Hello---World--  ") == "hello-world", "separator runs collapse")
 check(OutputNaming.slug("Ünïcôdé", transliterate: false) == "n-c-d", "transliteration can be off")
@@ -399,5 +403,17 @@ heicTarget.format = .heic
 heicTarget.targetFileSizeEnabled = true
 heicTarget.targetFileSizeBytes = 512_000
 check(heicTarget.isValid, "heic target settings validate")
+
+// Ladder widths are typed as free text, so parsing has to survive whatever lands in the
+// field without reordering what the user sees.
+check(Ladder.parseWidths("400, 800, 1200") == [400, 800, 1200], "comma separated widths")
+check(Ladder.parseWidths("400 800") == [400, 800], "space separated widths")
+check(Ladder.parseWidths("800, 400") == [800, 400], "typed order is preserved")
+check(Ladder.parseWidths("400, , 800,") == [400, 800], "stray separators are ignored")
+check(Ladder.parseWidths("400, abc, -5, 0, 800") == [400, 800], "nonsense is dropped")
+check(Ladder.parseWidths("") == [], "empty text yields no widths")
+check(Ladder.formatWidths([400, 800]) == "400, 800", "widths format back to text")
+// Round-tripping matters: the field is rendered from whatever was parsed.
+check(Ladder.formatWidths(Ladder.parseWidths("400, 800, 1200")) == "400, 800, 1200", "widths round-trip")
 
 print("All Image Resizer checks passed.")

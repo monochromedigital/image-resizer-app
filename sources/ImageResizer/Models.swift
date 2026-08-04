@@ -113,12 +113,30 @@ struct ResizeSettings: Equatable {
     /// Defaulted so the memberwise initialiser stays source-compatible.
     var webExport: WebExport? = nil
 
+    /// Whether a run can start.
+    ///
+    /// A ladder supplies the widths itself, so the width and height fields stop being
+    /// required once one is configured — otherwise a fully configured ladder leaves the
+    /// Resize button disabled with a hint asking for a size it does not need. Fill is the
+    /// exception: it still needs a shape to crop to, from the ladder's stored ratio or
+    /// from the live fields.
     var isValid: Bool {
-        let validSize = switch mode {
-        case .fit: (width ?? 0) > 0 || (height ?? 0) > 0
-        case .fill: (width ?? 0) > 0 && (height ?? 0) > 0
-        case .longEdge: (longEdge ?? 0) > 0
-        case .percentage: (percentage ?? 0) > 0
+        let ladderWidths = webExport?.ladder?.normalisedWidths ?? []
+        let hasLadder = !ladderWidths.isEmpty && SizeLadder.applies(to: mode)
+        let validSize = if hasLadder {
+            switch mode {
+            case .fit, .longEdge: true
+            case .fill: (webExport?.ladder?.aspectRatio?.isValid ?? false)
+                || ((width ?? 0) > 0 && (height ?? 0) > 0)
+            case .percentage: (percentage ?? 0) > 0
+            }
+        } else {
+            switch mode {
+            case .fit: (width ?? 0) > 0 || (height ?? 0) > 0
+            case .fill: (width ?? 0) > 0 && (height ?? 0) > 0
+            case .longEdge: (longEdge ?? 0) > 0
+            case .percentage: (percentage ?? 0) > 0
+            }
         }
         let validTarget = !targetFileSizeEnabled
             || (format.supportsTargetFileSize && (targetFileSizeBytes ?? 0) > 0)

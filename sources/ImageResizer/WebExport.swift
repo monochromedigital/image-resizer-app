@@ -126,6 +126,19 @@ struct Ladder: Codable, Equatable {
         Array(Set(widths.filter { $0 > 0 })).sorted()
     }
 
+    /// Widths as typed: comma or space separated, order preserved, nonsense dropped.
+    /// `normalisedWidths` does the sorting and de-duplication at the point of use, so
+    /// what the field shows stays what was typed.
+    static func parseWidths(_ text: String) -> [Int] {
+        text.split(whereSeparator: { $0 == "," || $0 == " " || $0 == "\n" || $0 == "\t" })
+            .compactMap { Int($0) }
+            .filter { $0 > 0 }
+    }
+
+    static func formatWidths(_ widths: [Int]) -> String {
+        widths.map(String.init).joined(separator: ", ")
+    }
+
     /// Lenient for the same reason `WebExport`'s is — see the note there.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)

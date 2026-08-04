@@ -148,11 +148,20 @@ enum OutputNaming {
 
     /// Strips a camera prefix only when something nameable survives. `IMG_4821` would
     /// otherwise become `4821`, which is a worse filename than `img-4821`.
+    ///
+    /// The prefix and its frame number are treated as one unit, so
+    /// `IMG_4821 Café Sign` becomes `cafe-sign` rather than `4821-cafe-sign` — the file
+    /// describes a café sign, not image 4821. The number is kept only when dropping it
+    /// would leave nothing nameable behind.
     private static func strippingCameraPrefix(_ value: String) -> String {
         let upper = value.uppercased()
         for prefix in cameraPrefixes where upper.hasPrefix(prefix) {
             let stripped = String(value.dropFirst(prefix.count))
-            return stripped.contains(where: \.isLetter) ? stripped : value
+            guard stripped.contains(where: \.isLetter) else { return value }
+            let withoutFrameNumber = stripped.drop(while: \.isNumber)
+            return withoutFrameNumber.contains(where: \.isLetter)
+                ? String(withoutFrameNumber)
+                : stripped
         }
         return value
     }
