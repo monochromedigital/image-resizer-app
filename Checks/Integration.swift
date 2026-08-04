@@ -270,6 +270,66 @@ struct IntegrationChecks {
             print("AVIF is not writable on this machine; skipped its round-trip check.")
         }
 
+        let transparentInput = nested.appendingPathComponent("transparent.png")
+        try makeTransparentPNG(at: transparentInput, width: 400, height: 300)
+
+        // Target file size now bisects any lossy type, not only JPEG. HEIC is included
+        // because it was always lossy and always excluded — a pre-existing gap.
+        for lossy in [OutputFormat.heic, .avif] where OutputFormat.writable.contains(lossy) {
+            let suffix = lossy.preferredExtension!
+            var baselineSettings = detailSettings
+            baselineSettings.format = lossy
+            let baseline = try ResizeEngine.resize(job: ResizeJob(
+                source: detailInput,
+                output: outputs[0].appendingPathComponent("Trips/target-\(suffix)-baseline.\(suffix)"),
+                settings: baselineSettings
+            ))
+            let baselineBytes = try Data(contentsOf: baseline).count
+
+            var targetSettings = baselineSettings
+            targetSettings.targetFileSizeEnabled = true
+            targetSettings.targetFileSizeBytes = baselineBytes / 2
+            let target = try ResizeEngine.resize(job: ResizeJob(
+                source: detailInput,
+                output: outputs[0].appendingPathComponent("Trips/target-\(suffix).\(suffix)"),
+                settings: targetSettings
+            ))
+            let targetBytes = try Data(contentsOf: target).count
+            precondition(
+                targetBytes <= baselineBytes / 2,
+                "\(lossy.rawValue) overshot its limit: \(targetBytes) > \(baselineBytes / 2)"
+            )
+            try checkDimensions(target, width: 800, height: 600)
+
+            // A limit nothing can meet must still fail loudly rather than writing an
+            // oversized file and reporting success.
+            var impossible = targetSettings
+            impossible.targetFileSizeBytes = 1
+            do {
+                _ = try ResizeEngine.resize(job: ResizeJob(
+                    source: detailInput,
+                    output: outputs[0].appendingPathComponent("Trips/target-\(suffix)-impossible.\(suffix)"),
+                    settings: impossible
+                ))
+                preconditionFailure("\(lossy.rawValue) accepted an impossible file-size limit")
+            } catch ResizeEngineError.targetFileSizeTooSmall {}
+
+            // The bisection renders through its own path, so it has to be told the real
+            // output type: `render` decides whether to keep an alpha channel from it, and
+            // JPEG would flatten transparency that AVIF and HEIC both support.
+            var alphaSettings = targetSettings
+            alphaSettings.targetFileSizeBytes = 400_000
+            let alphaOut = try ResizeEngine.resize(job: ResizeJob(
+                source: transparentInput,
+                output: outputs[0].appendingPathComponent("Trips/alpha-\(suffix).\(suffix)"),
+                settings: alphaSettings
+            ))
+            let keptAlpha = try hasAlpha(alphaOut)
+            precondition(keptAlpha, "\(lossy.rawValue) target-size path dropped the alpha channel")
+            print("\(lossy.rawValue) target file size checks passed.")
+        }
+
+
         if let rawFixture = ProcessInfo.processInfo.environment["IMAGE_RESIZER_RAW_FIXTURE"], !rawFixture.isEmpty {
             var rawSettings = settings
             rawSettings.width = 800
@@ -320,6 +380,30 @@ struct IntegrationChecks {
         }
 
         print("Image round-trip, target file size, filename suffix, resize modes, no-enlargement, collision, WebP, animated WebP, animated GIF, and RAW-path checks passed.")
+    }
+
+    static func makeTransparentPNG(at url: URL, width: Int, height: Int) throws {
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        context.setFillColor(CGColor(red: 0.9, green: 0.3, blue: 0.2, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width / 2, height: height))
+        let image = context.makeImage()!
+        let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, image, nil)
+        precondition(CGImageDestinationFinalize(destination))
+    }
+
+    static func hasAlpha(_ url: URL) throws -> Bool {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
+            throw NSError(domain: "ImageResizerChecks", code: 4, userInfo: [NSLocalizedDescriptionKey: "Unreadable output"])
+        }
+        return (properties[kCGImagePropertyHasAlpha] as? NSNumber)?.boolValue ?? false
     }
 
     static func makePNG(at url: URL, width: Int, height: Int, red: CGFloat, green: CGFloat, blue: CGFloat) throws {

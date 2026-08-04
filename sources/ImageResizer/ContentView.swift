@@ -340,7 +340,7 @@ struct ContentView: View {
 
     private var targetFileSizeHelpText: String {
         if !model.store.format.supportsTargetFileSize {
-            return "Choose JPEG or WebP to use a target file size."
+            return "Choose a lossy format — JPEG, HEIC, AVIF, or WebP — to use a target file size."
         }
         if model.store.settings.targetFileSizeBytes == nil {
             return "Enter a file size greater than zero."

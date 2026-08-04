@@ -23,8 +23,15 @@ enum OutputFormat: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
+    /// Whether a size limit can be met by trading quality away. Spelled out rather than
+    /// derived so a format added later has to be considered rather than defaulting in.
     var supportsTargetFileSize: Bool {
-        self == .jpeg || self == .webp
+        switch self {
+        case .jpeg, .heic, .avif, .webp: true
+        // Keep Original is excluded because the real output type is not known until the
+        // source is opened.
+        case .original, .png, .tiff, .gif: false
+        }
     }
 
     var preferredExtension: String? {

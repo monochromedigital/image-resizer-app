@@ -377,4 +377,27 @@ if OutputFormat.writable.contains(.avif) {
     print("AVIF is not writable on this machine; the format picker will omit it.")
 }
 
+// Target file size applies to any format whose quality can be traded away, not just the
+// two it originally listed. HEIC was lossy and excluded from the start — that gap is
+// closed here alongside AVIF.
+check(OutputFormat.jpeg.supportsTargetFileSize, "jpeg supports a target size")
+check(OutputFormat.webp.supportsTargetFileSize, "webp supports a target size")
+check(OutputFormat.heic.supportsTargetFileSize, "heic supports a target size")
+check(OutputFormat.avif.supportsTargetFileSize, "avif supports a target size")
+check(!OutputFormat.png.supportsTargetFileSize, "png has no quality to trade")
+check(!OutputFormat.tiff.supportsTargetFileSize, "tiff has no quality to trade")
+check(!OutputFormat.gif.supportsTargetFileSize, "gif has no quality to trade")
+// Keep Original cannot know its real output type until the source is opened.
+check(!OutputFormat.original.supportsTargetFileSize, "keep original defers the decision")
+// Every ImageIO type the engine will bisect must also be one it sets quality on.
+for format in OutputFormat.allCases where format.supportsTargetFileSize && format != .webp {
+    check(OutputType.isLossy(format.typeIdentifier!), "\(format.rawValue) bisects and sets quality consistently")
+}
+
+var heicTarget = settings(mode: .fit, width: 1_000)
+heicTarget.format = .heic
+heicTarget.targetFileSizeEnabled = true
+heicTarget.targetFileSizeBytes = 512_000
+check(heicTarget.isValid, "heic target settings validate")
+
 print("All Image Resizer checks passed.")
