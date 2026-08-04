@@ -98,7 +98,7 @@ final class ResizeViewModel: ObservableObject {
             self.control = control
 
             task = Task {
-                var batch = await ResizeEngine.process(jobs: jobs, skipped: skipped, settings: settings, control: control) { update in
+                var batch = await ResizeEngine.process(jobs: jobs, skipped: skipped, control: control) { update in
                     Task { @MainActor in self.progress = update }
                 }
                 batch = BatchResult(progress: batch.progress, outputDirectories: outputDirectories, errors: batch.errors)

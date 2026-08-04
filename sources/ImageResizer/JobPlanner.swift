@@ -6,6 +6,9 @@ enum JobPlanner {
     struct Probe {
         let sourceType: CFString?
         let isRaw: Bool
+        /// Orientation-corrected pixel size, so a rotated source ladders against the
+        /// dimensions it will actually be written at. `nil` when the header omits them.
+        let pixelSize: CGSize?
     }
 
     static func plan(sources: [URL], settings: ResizeSettings) throws -> ([ResizeJob], [URL], Int) {
@@ -40,7 +43,7 @@ enum JobPlanner {
                         continue
                     }
                     let relative = relativePath(of: file, beneath: source)
-                    jobs.append(job(
+                    jobs.append(contentsOf: self.jobs(
                         for: file,
                         probe: probe,
                         directory: output,
@@ -53,7 +56,7 @@ enum JobPlanner {
             } else if let probe = probe(source, writableTypes: writableTypes) {
                 let output = outputDirectory(forFile: source, settings: settings)
                 if !outputs.contains(output) { outputs.append(output) }
-                jobs.append(job(
+                jobs.append(contentsOf: self.jobs(
                     for: source,
                     probe: probe,
                     directory: output,
@@ -69,11 +72,14 @@ enum JobPlanner {
         return (jobs, outputs, skipped)
     }
 
-    /// Resolves one job's final output path. Naming happens here rather than during
-    /// encoding so that every filename in a batch is known before the first byte is
-    /// written — which is what makes collisions decidable and, later, what lets the
-    /// sidecar manifest describe the whole output set.
-    private static func job(
+    /// Resolves the jobs one source produces — one per ladder rung, or a single job
+    /// when no ladder applies.
+    ///
+    /// Naming happens here rather than during encoding so that every filename in a batch
+    /// is known before the first byte is written. That is what makes collisions decidable
+    /// across the whole batch and, later, what lets the sidecar manifest describe the
+    /// complete output set.
+    private static func jobs(
         for file: URL,
         probe: Probe,
         directory: URL,
@@ -81,7 +87,7 @@ enum JobPlanner {
         naming: Naming,
         settings: ResizeSettings,
         reservations: NameReservations
-    ) -> ResizeJob {
+    ) -> [ResizeJob] {
         let type = OutputType.resolve(
             sourceType: probe.sourceType,
             isRaw: probe.isRaw,
@@ -90,18 +96,26 @@ enum JobPlanner {
         let fileExtension = OutputType.usesWebPCodec(sourceType: probe.sourceType, format: settings.format)
             ? "webp"
             : OutputType.fileExtension(for: type, fallback: file.pathExtension)
-        let stem = OutputNaming.stem(
-            source: file,
-            naming: naming,
-            filenameSuffix: settings.filenameSuffix,
-            outputExtension: fileExtension
-        )
+
         var base = directory
         if !relativeDirectory.isEmpty {
             base = base.appendingPathComponent(relativeDirectory, isDirectory: true)
         }
-        let requested = base.appendingPathComponent(stem).appendingPathExtension(fileExtension)
-        return ResizeJob(source: file, output: reservations.reserve(requested))
+
+        return SizeLadder.expand(settings, sourceSize: probe.pixelSize).map { rung in
+            // The same layout maths the engine will run, so {width} and {height} name the
+            // file after the size it is actually written at rather than the size asked for.
+            let outputSize = probe.pixelSize.map { ResizeMath.layout(source: $0, settings: rung).outputSize }
+            let stem = OutputNaming.stem(
+                source: file,
+                naming: naming,
+                filenameSuffix: rung.filenameSuffix,
+                outputExtension: fileExtension,
+                outputSize: outputSize
+            )
+            let requested = base.appendingPathComponent(stem).appendingPathExtension(fileExtension)
+            return ResizeJob(source: file, output: reservations.reserve(requested), settings: rung)
+        }
     }
 
     static func outputDirectory(forFolder source: URL, settings: ResizeSettings) -> URL {
@@ -134,7 +148,21 @@ enum JobPlanner {
         let sourceType = CGImageSourceGetType(source)
         // Anything ImageIO can read but not write is treated as camera RAW.
         let isRaw = sourceType.map { !writableTypes.contains($0 as String) } ?? true
-        return Probe(sourceType: sourceType, isRaw: isRaw)
+        return Probe(sourceType: sourceType, isRaw: isRaw, pixelSize: pixelSize(of: source))
+    }
+
+    /// Reads the dimensions from the header without decoding the image. Mirrors the
+    /// orientation swap `ResizeEngine.renderableFrame` applies, so the planner and the
+    /// engine agree on how large the output will be.
+    private static func pixelSize(of source: CGImageSource) -> CGSize? {
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue,
+              width > 0, height > 0 else { return nil }
+        let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+        return orientation >= 5 && orientation <= 8
+            ? CGSize(width: height, height: width)
+            : CGSize(width: width, height: height)
     }
 
     static func isReadableImage(_ url: URL) -> Bool {

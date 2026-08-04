@@ -17,7 +17,8 @@ enum WebPCodecError: LocalizedError {
 }
 
 enum WebPCodec {
-    static func resize(source: CGImageSource, isRaw: Bool, job: ResizeJob, settings: ResizeSettings) throws -> URL {
+    static func resize(source: CGImageSource, isRaw: Bool, job: ResizeJob) throws -> URL {
+        let settings = job.settings
         guard let encoder = tool(named: "img2webp") else { throw WebPCodecError.toolsMissing }
         let frameCount = CGImageSourceGetCount(source)
         guard frameCount > 0 else { throw ResizeEngineError.unreadable(job.source) }

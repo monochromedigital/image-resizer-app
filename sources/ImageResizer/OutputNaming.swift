@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// Builds output filenames from a source URL and a `Naming` configuration.
 ///
@@ -69,20 +70,26 @@ enum OutputNaming {
         source: URL,
         naming: Naming,
         filenameSuffix: String,
-        outputExtension: String
+        outputExtension: String,
+        outputSize: CGSize? = nil
     ) -> String {
         let original = source.deletingPathExtension().lastPathComponent
         let suffix = sanitisedSuffix(filenameSuffix)
+        var dimensions: [String: String] = [:]
+        if let outputSize, outputSize.width > 0, outputSize.height > 0 {
+            dimensions["width"] = String(Int(outputSize.width.rounded()))
+            dimensions["height"] = String(Int(outputSize.height.rounded()))
+        }
 
         switch naming.style {
         case .keepOriginal:
             // Must stay byte-identical to the pre-web-export behaviour, so the result is
             // returned untidied — the suffix may legitimately contain runs of hyphens.
-            let expanded = expand(naming.template, values: [
+            let expanded = expand(naming.template, values: dimensions.merging([
                 "original": original,
                 "suffix": suffix,
                 "format": outputExtension
-            ])
+            ]) { _, explicit in explicit })
             return expanded.isEmpty ? original : expanded
 
         case .slug:
@@ -91,12 +98,12 @@ enum OutputNaming {
                 transliterate: naming.transliterate,
                 stripCameraPrefixes: naming.stripCameraPrefixes
             )
-            let expanded = expand(naming.template, values: [
+            let expanded = expand(naming.template, values: dimensions.merging([
                 "slug": slugged,
                 "original": original,
                 "suffix": suffix,
                 "format": outputExtension
-            ])
+            ]) { _, explicit in explicit })
             return fallback(for: tidied(expanded, maxLength: naming.maxLength), original: original)
         }
     }
