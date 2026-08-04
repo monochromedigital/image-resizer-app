@@ -119,7 +119,7 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
 ```
 
 ```sh
-SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk swift build --disable-sandbox
+swift build --disable-sandbox
 ```
 
 ```sh
@@ -162,12 +162,22 @@ Two consequences for new code:
   harness. Prefer to put pure logic in `Models.swift` (or a new UI-free file added to
   both lists).
 
-SDK resolution in `check.sh` is `$IMAGE_RESIZER_SDK` → hardcoded `MacOSX15.4.sdk` →
-`xcrun`. The CI runner is `macos-15`. Frameworks introduced after that SDK (for example
-`FoundationModels`, which needs SDK 26) **will not compile in CI** even behind an
-`#available` check — availability gating is a runtime mechanism, and the SDK must
-contain the framework at build time. Bumping the SDK and the runner is a deliberate
-change, not a drive-by.
+SDK resolution in `check.sh` and `package.sh` is `$IMAGE_RESIZER_SDK` → whatever
+`xcrun` considers current. The CI runner is `macos-26`. Both were previously pinned to
+`MacOSX15.4.sdk`, which made local runs disagree with CI and withheld frameworks added
+since — availability gating is a runtime mechanism, so an `#available` check does not
+help if the SDK lacks the framework at build time.
+
+**The deployment target is set by `Package.swift` (`.macOS(.v14)`), not by the SDK.**
+Building against a newer SDK does not raise it; the shipped binary reports `minos 14.0`.
+Verify with `vtool -show-build "dist/Image Resizer.app/Contents/MacOS/ImageResizer"` if
+you touch any of this.
+
+Note that some capabilities are gated by the *running* OS rather than the SDK. AVIF is
+writable on macOS 26 and not on macOS 15, which is why `OutputFormat.writable` probes
+ImageIO at launch instead of testing a version. Checks that depend on such a capability
+should be guarded on the same probe and should print which branch they took, so a skip
+is visible in the log rather than looking like a pass.
 
 ## Conventions
 

@@ -29,7 +29,7 @@ Updates use Sparkle 2 under its permissive open-source license. Release archives
 
 ```sh
 ./Scripts/check.sh
-SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk swift build --disable-sandbox
+swift build --disable-sandbox
 swift run ImageResizer
 ```
 
