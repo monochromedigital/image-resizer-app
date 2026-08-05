@@ -470,11 +470,28 @@ struct ContentView: View {
                 Text("Recognition runs on this Mac, and phrasing uses the on-device language model where one is available. Suggestions only ever repeat what was detected, and images the recogniser is unsure about are left undescribed.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if model.store.webExport.altText?.engine == .automatic {
+                    rightsField("What these are", placeholder: "Beirut café interior", value: altTextContext())
+                    Text("Optional. Something true of every image in this batch, used to word the suggestions — the recogniser can name what is in a picture but not what it is for. It never becomes a description on its own: an image it cannot describe stays undescribed rather than borrowing this sentence.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Text("Review suggestions before publishing — they describe what was recognised, which is not always what matters about a picture.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func altTextContext() -> Binding<String> {
+        Binding(
+            get: { (model.store.webExport.altText ?? AltText()).context },
+            set: {
+                var updated = model.store.webExport.altText ?? AltText()
+                updated.context = $0
+                model.store.webExport.altText = updated
+            }
+        )
     }
 
     private func altTextEngine() -> Binding<AltText.Engine> {

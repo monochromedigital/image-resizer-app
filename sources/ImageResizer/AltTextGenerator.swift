@@ -70,11 +70,35 @@ enum AltTextGenerator {
     static func describe(_ labels: [String], settings: AltText) async -> String? {
         #if canImport(FoundationModels)
         if settings.engine == .automatic, #available(macOS 26, *),
-           let sentence = await LanguageModelPhrasing.sentence(from: labels, maxLength: settings.maxLength) {
+           let sentence = await LanguageModelPhrasing.sentence(
+               prompt: prompt(labels: labels, context: settings.context),
+               maxLength: settings.maxLength
+           ) {
             return sentence
         }
         #endif
+        // The labels path cannot use the context: there is no model to fold it in, and
+        // appending it to a list of labels produces "chair, indoor, Beirut café" — which
+        // reads as another thing the recogniser saw.
         return tidy(phrase(from: labels), maxLength: settings.maxLength)
+    }
+
+    /// What the phrasing stage is told.
+    ///
+    /// Pure string assembly, deliberately: what the model is given — and what it is not —
+    /// is the whole safety story of this feature, so it belongs where it can be checked
+    /// rather than inside an availability-gated type that the checks cannot reach.
+    ///
+    /// The context is labelled as the author's assertion about the batch rather than as
+    /// something observed, because the model must not treat it as another detection.
+    static func prompt(labels: [String], context: String) -> String {
+        let base = "Labels: \(labels.joined(separator: ", "))"
+        let trimmed = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return base }
+        // Capped so a pasted paragraph cannot crowd out the labels, which are the only
+        // part of the prompt that describes this particular image.
+        let capped = trimmed.count > 120 ? String(trimmed.prefix(120)) : trimmed
+        return base + "\nThe author says this about every image in the batch: \(capped)"
     }
 
     /// The fallback when no language model is available: the labels themselves, most
@@ -118,20 +142,25 @@ enum LanguageModelPhrasing {
     private static let instructions = """
     You convert object labels into alt text for a web image.
     Rules, in order of importance:
-    1. Use ONLY the given labels. Never introduce a person, object, action, colour, \
-    or setting that is not in the list.
-    2. If the labels are too vague to describe anything, reply with exactly: UNKNOWN
-    3. One short noun phrase. No sentence-ending period. Keep it brief.
-    4. No preamble, no quotes, no explanation.
+    1. Use ONLY the given labels and, if one is provided, the author's statement about \
+    the batch. Never introduce a person, object, action, colour, or setting that is in \
+    neither.
+    2. The author's statement is context, not a description of this image. It may narrow \
+    or name what the labels already describe. It must never replace them: if it mentions \
+    something the labels do not, leave that thing out.
+    3. If the labels are too vague to describe anything, reply with exactly: UNKNOWN — \
+    even when an author statement is present.
+    4. One short noun phrase. No sentence-ending period. Keep it brief.
+    5. No preamble, no quotes, no explanation.
     """
 
-    static func sentence(from labels: [String], maxLength: Int) async -> String? {
+    static func sentence(prompt: String, maxLength: Int) async -> String? {
         guard case .available = SystemLanguageModel.default.availability else { return nil }
         do {
             let session = LanguageModelSession(instructions: instructions)
             // Low temperature: this is a rewriting task, not a creative one.
             let response = try await session.respond(
-                to: "Labels: \(labels.joined(separator: ", "))",
+                to: prompt,
                 options: GenerationOptions(temperature: 0.2)
             )
             return AltTextGenerator.tidy(response.content, maxLength: maxLength)
