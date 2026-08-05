@@ -48,7 +48,14 @@ enum SidecarWriter {
             }
             if sidecars.markupSnippet {
                 let url = directory.appendingPathComponent("snippet.html")
-                let markup = entries.map { self.markup(for: $0, settings: settings, sidecars: sidecars) }
+                let markup = entries.enumerated().map { index, entry in
+                    self.markup(
+                        for: entry,
+                        settings: settings,
+                        sidecars: sidecars,
+                        isHero: sidecars.prioritiseFirstImage && index == 0
+                    )
+                }
                 try Data(markup.joined(separator: "\n\n").utf8).write(to: url, options: .atomic)
                 written.append(url)
             }
@@ -115,7 +122,14 @@ enum SidecarWriter {
     /// choose between; with one format its `<source>` list would be empty and the markup
     /// would be strictly worse than an `<img>`. Format alternatives are not implemented,
     /// so this stays an `<img>` until they are.
-    static func markup(for entry: Entry, settings: ResizeSettings, sidecars: Sidecars) -> String {
+    ///
+    /// `isHero` marks the one image a page should load first. Everything else defers.
+    static func markup(
+        for entry: Entry,
+        settings: ResizeSettings,
+        sidecars: Sidecars,
+        isHero: Bool = false
+    ) -> String {
         guard let fallback = entry.fallback else { return "" }
         let srcset = entry.renditions
             .map { "\(path(for: $0, sidecars: sidecars)) \($0.width)w" }
@@ -127,10 +141,14 @@ enum SidecarWriter {
             "sizes=\"\(escape(sidecars.sizesAttribute))\"",
             "width=\"\(fallback.width)\"",
             "height=\"\(fallback.height)\"",
-            "alt=\"\(escape(altText(for: entry, settings: settings)))\"",
-            "loading=\"lazy\"",
-            "decoding=\"async\""
+            "alt=\"\(escape(altText(for: entry, settings: settings)))\""
         ]
+        // Deferring the image a page paints largest delays the paint it is measured on,
+        // so the hero asks to be fetched early and everything below the fold waits.
+        attributes += isHero
+            ? ["fetchpriority=\"high\"", "loading=\"eager\""]
+            : ["loading=\"lazy\""]
+        attributes.append("decoding=\"async\"")
         if let placeholder = entry.placeholder {
             attributes.append("style=\"background-image:url(\(placeholder));background-size:cover\"")
         }

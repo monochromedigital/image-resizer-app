@@ -246,6 +246,14 @@ guard let sparseWebExport = try? JSONDecoder().decode(WebExport.self, from: Data
 check(sparseWebExport.schemaVersion == WebExport.currentSchemaVersion, "web export schema fallback")
 check(!sparseWebExport.isEnabled, "web export defaults to off")
 
+// Settings saved before the hero existed carry no such key, and the safer reading of
+// silence is that a page does want its first image early.
+guard let sparseSidecars = try? JSONDecoder().decode(Sidecars.self, from: Data("{\"manifest\":true}".utf8)) else {
+    FileHandle.standardError.write(Data("FAILED: Sidecars rejects a blob with missing keys\n".utf8))
+    exit(1)
+}
+check(sparseSidecars.prioritiseFirstImage, "a blob written before the hero existed still prioritises it")
+
 // The size ladder. A rung is just ResizeSettings with different numbers, which is what
 // keeps ResizeMath, the render path and the encoders out of this feature entirely.
 private func laddered(
@@ -491,6 +499,16 @@ check(markup.contains("src=\"/images/cafe-sign-800.jpg\""), "src falls back to t
 check(markup.contains("width=\"800\"") && markup.contains("height=\"450\""), "intrinsic size prevents layout shift")
 check(markup.contains("alt=\"Cafe Sign\""), "alt comes from the title policy: \(markup)")
 check(markup.contains("loading=\"lazy\""), "lazy loading")
+check(!markup.contains("fetchpriority"), "an ordinary image asks for no priority")
+
+// The hero is the image most likely to decide the page's largest paint. Deferring it is
+// the failure this markup exists to avoid, so the two attributes are pinned together.
+let heroMarkup = SidecarWriter.markup(
+    for: entries[0], settings: sidecarSettings, sidecars: sidecarSettings.webExport!.sidecars!, isHero: true
+)
+check(heroMarkup.contains("fetchpriority=\"high\""), "the hero asks to be fetched early: \(heroMarkup)")
+check(heroMarkup.contains("loading=\"eager\""), "the hero is not deferred")
+check(!heroMarkup.contains("loading=\"lazy\""), "the hero is never lazy")
 
 // Without a title policy there is nothing to say, and an empty alt is a valid
 // declaration that an image is decorative — a guess would be worse.
