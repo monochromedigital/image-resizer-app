@@ -270,6 +270,8 @@ struct ContentView: View {
                     rightsControls
                     Divider()
                     sidecarControls
+                    Divider()
+                    altTextControls
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -358,6 +360,36 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var altTextControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Suggest alt text", isOn: binding(\.isAltTextEnabled))
+            if model.store.isAltTextEnabled {
+                Picker("Wording", selection: altTextEngine()) {
+                    Text("Detected labels").tag(AltText.Engine.labelsOnly)
+                    Text("Phrased").tag(AltText.Engine.automatic)
+                }
+                .frame(maxWidth: 320)
+                Text("Recognition runs on this Mac, and phrasing uses the on-device language model where one is available. Suggestions only ever repeat what was detected, and images the recogniser is unsure about are left undescribed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Review suggestions before publishing — they describe what was recognised, which is not always what matters about a picture.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func altTextEngine() -> Binding<AltText.Engine> {
+        Binding(
+            get: { (model.store.webExport.altText ?? AltText()).engine },
+            set: {
+                var updated = model.store.webExport.altText ?? AltText()
+                updated.engine = $0
+                model.store.webExport.altText = updated
+            }
+        )
     }
 
     private var sidecarControls: some View {

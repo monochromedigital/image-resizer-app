@@ -127,6 +127,17 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    var isAltTextEnabled: Bool {
+        get { webExport.altText?.isEnabled == true }
+        set {
+            var updated = webExport
+            var alt = updated.altText ?? AltText()
+            alt.isEnabled = newValue
+            updated.altText = alt
+            webExport = updated
+        }
+    }
+
     var areSidecarsEnabled: Bool {
         get { webExport.sidecars != nil }
         set {

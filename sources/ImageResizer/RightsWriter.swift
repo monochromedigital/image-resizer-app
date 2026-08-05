@@ -24,7 +24,8 @@ enum RightsWriter {
     static func iptcDictionary(
         existing: [CFString: Any]?,
         rights: RightsMetadata,
-        source: URL
+        source: URL,
+        altText: String? = nil
     ) -> [CFString: Any]? {
         var iptc = existing ?? [:]
         var changed = false
@@ -46,7 +47,7 @@ enum RightsWriter {
             assign(kCGImagePropertyIPTCCredit, credit)
         }
 
-        switch resolve(rights.titlePolicy, source: source, humanise: true) {
+        switch resolve(rights.titlePolicy, source: source, humanise: true, altText: altText) {
         case .some(let title): assign(kCGImagePropertyIPTCObjectName, title)
         case nil where rights.titlePolicy == .empty:
             iptc.removeValue(forKey: kCGImagePropertyIPTCObjectName)
@@ -54,7 +55,7 @@ enum RightsWriter {
         default: break
         }
 
-        switch resolve(rights.descriptionPolicy, source: source, humanise: true) {
+        switch resolve(rights.descriptionPolicy, source: source, humanise: true, altText: altText) {
         case .some(let description): assign(kCGImagePropertyIPTCCaptionAbstract, description)
         case nil where rights.descriptionPolicy == .empty:
             iptc.removeValue(forKey: kCGImagePropertyIPTCCaptionAbstract)
@@ -112,13 +113,22 @@ enum RightsWriter {
     }
 
     /// The text a policy produces, or `nil` to leave the field as it is.
-    static func resolve(_ policy: RightsMetadata.TextPolicy, source: URL, humanise: Bool) -> String? {
+    static func resolve(
+        _ policy: RightsMetadata.TextPolicy,
+        source: URL,
+        humanise: Bool,
+        altText: String? = nil
+    ) -> String? {
         switch policy {
         case .keepExisting, .empty: nil
         case .fromFilename:
             humanise
                 ? humanised(source.deletingPathExtension().lastPathComponent)
                 : source.deletingPathExtension().lastPathComponent
+        // No suggestion means leave the field alone rather than clear it: the generator
+        // declines when it is not confident, and that is not an instruction to erase
+        // whatever the source already carried.
+        case .fromAltText: altText
         }
     }
 

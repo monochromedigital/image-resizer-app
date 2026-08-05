@@ -498,6 +498,67 @@ struct IntegrationChecks {
         precondition(snippet.contains("alt=\"Cafe Sign\""), "snippet alt")
         print("Sidecar checks passed.")
 
+
+        // Alt text end to end, on a real photograph — a synthetic fixture has nothing to
+        // recognise, so this is skipped rather than asserted when none is available.
+        let photoCandidates = [
+            "/System/Library/Desktop Pictures/iMac Blue.heic",
+            "/System/Library/Desktop Pictures/Mac Blue.heic"
+        ].map(URL.init(fileURLWithPath:)).filter { FileManager.default.fileExists(atPath: $0.path) }
+
+        if let photo = photoCandidates.first {
+            // A low floor, because the point here is that the wiring produces something
+            // and writes it in both places, not that the classifier is any good.
+            let altSettings = AltText(isEnabled: true, engine: .labelsOnly, minimumConfidence: 0.02)
+            let suggestions = await AltTextGenerator.generate(for: [photo], settings: altSettings)
+            // The confidence floor is what keeps the feature honest, so demand that a
+            // high one actually silences it. Nothing in this fixture is recognised
+            // anywhere near this confidently.
+            let demanding = AltText(isEnabled: true, engine: .labelsOnly, minimumConfidence: 0.99)
+            let refused = await AltTextGenerator.generate(for: [photo], settings: demanding)
+            precondition(refused[photo] == nil, "a high confidence floor must produce no suggestion, got \(refused)")
+
+            if let suggestion = suggestions[photo] {
+                precondition(!suggestion.isEmpty, "a suggestion must not be empty")
+                precondition(suggestion.count <= altSettings.maxLength, "a suggestion respects its length cap")
+                precondition(!suggestion.hasSuffix("."), "alt text is a phrase, not a sentence")
+
+                var altJobSettings = settings
+                altJobSettings.webExport = WebExport(
+                    isEnabled: true,
+                    rights: RightsMetadata(descriptionPolicy: .fromAltText),
+                    sidecars: Sidecars()
+                )
+                let altOut = outputs[0].appendingPathComponent("Trips/alt.jpg")
+                _ = try ResizeEngine.resize(job: ResizeJob(
+                    source: input, output: altOut, settings: altJobSettings, altText: suggestion
+                ))
+                guard let altSource = CGImageSourceCreateWithURL(altOut as CFURL, nil),
+                      let altProps = CGImageSourceCopyPropertiesAtIndex(altSource, 0, nil) as? [CFString: Any],
+                      let altIPTC = altProps[kCGImagePropertyIPTCDictionary] as? [CFString: Any] else {
+                    preconditionFailure("alt-text output carries no IPTC")
+                }
+                precondition(
+                    (altIPTC[kCGImagePropertyIPTCCaptionAbstract] as? String) == suggestion,
+                    "the suggestion is written as the description"
+                )
+
+                // And it must reach the markup, in preference to a filename-derived title.
+                let altEntry = SidecarWriter.group(
+                    [Rendition(source: input, output: altOut, width: 320, height: 180, bytes: 10, altText: suggestion)],
+                    settings: altJobSettings,
+                    sidecars: Sidecars()
+                )[0]
+                let altMarkup = SidecarWriter.markup(for: altEntry, settings: altJobSettings, sidecars: Sidecars())
+                precondition(altMarkup.contains("alt=\"\(suggestion)\""), "the suggestion reaches the markup: \(altMarkup)")
+                print("Alt text checks passed (\"\(suggestion)\").")
+            } else {
+                print("Alt text: nothing recognised confidently in the fixture; wiring exercised, output skipped.")
+            }
+        } else {
+            print("Alt text: no photographic fixture on this machine; skipped.")
+        }
+
         if let rawFixture = ProcessInfo.processInfo.environment["IMAGE_RESIZER_RAW_FIXTURE"], !rawFixture.isEmpty {
             var rawSettings = settings
             rawSettings.width = 800

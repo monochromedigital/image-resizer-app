@@ -191,6 +191,7 @@ struct Rendition: Equatable {
     let width: Int
     let height: Int
     let bytes: Int
+    var altText: String? = nil
 
     var format: String { output.pathExtension.lowercased() }
 }
@@ -313,6 +314,9 @@ struct ResizeJob {
     let source: URL
     let output: URL
     let settings: ResizeSettings
+    /// Filled in before the batch starts, when alt text is switched on. Defaulted so the
+    /// planner and the checks need not supply it.
+    var altText: String? = nil
 }
 
 /// Decides which container type an output is written as.

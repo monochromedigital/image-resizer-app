@@ -18,6 +18,7 @@ struct WebExport: Codable, Equatable {
     var color: ColorPolicy?
     var rights: RightsMetadata?
     var sidecars: Sidecars?
+    var altText: AltText?
 
     init(
         schemaVersion: Int = WebExport.currentSchemaVersion,
@@ -26,7 +27,8 @@ struct WebExport: Codable, Equatable {
         ladder: Ladder? = nil,
         color: ColorPolicy? = nil,
         rights: RightsMetadata? = nil,
-        sidecars: Sidecars? = nil
+        sidecars: Sidecars? = nil,
+        altText: AltText? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.isEnabled = isEnabled
@@ -35,6 +37,7 @@ struct WebExport: Codable, Equatable {
         self.color = color
         self.rights = rights
         self.sidecars = sidecars
+        self.altText = altText
     }
 
     /// Decoding is deliberately lenient. A blob written by an earlier build is missing
@@ -55,6 +58,55 @@ struct WebExport: Codable, Equatable {
         color = try container.decodeIfPresent(ColorPolicy.self, forKey: .color)
         rights = try container.decodeIfPresent(RightsMetadata.self, forKey: .rights)
         sidecars = try container.decodeIfPresent(Sidecars.self, forKey: .sidecars)
+        altText = try container.decodeIfPresent(AltText.self, forKey: .altText)
+    }
+}
+
+/// On-device alt-text suggestions.
+///
+/// See `AltTextGenerator` for why this is two stages rather than one model.
+struct AltText: Codable, Equatable {
+    enum Engine: String, Codable {
+        /// Vision labels only, joined into a phrase. Works on every supported system.
+        case labelsOnly
+        /// Vision labels phrased by the on-device language model where one exists,
+        /// falling back to `labelsOnly` where it does not.
+        case automatic
+    }
+
+    var isEnabled: Bool
+    var engine: Engine
+    /// The floor that stops the feature guessing. A classifier given something it does
+    /// not recognise still returns its best guesses, and describing an image wrongly is
+    /// worse for a screen-reader user than not describing it.
+    var minimumConfidence: Double
+    var maximumLabels: Int
+    var maxLength: Int
+
+    init(
+        isEnabled: Bool = false,
+        engine: Engine = .automatic,
+        minimumConfidence: Double = 0.3,
+        maximumLabels: Int = 5,
+        maxLength: Int = 125
+    ) {
+        self.isEnabled = isEnabled
+        self.engine = engine
+        self.minimumConfidence = minimumConfidence
+        self.maximumLabels = maximumLabels
+        self.maxLength = maxLength
+    }
+
+    /// Lenient for the same reason `WebExport`'s is — see the note there.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = AltText()
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? defaults.isEnabled
+        engine = try container.decodeIfPresent(Engine.self, forKey: .engine) ?? defaults.engine
+        minimumConfidence = try container.decodeIfPresent(Double.self, forKey: .minimumConfidence)
+            ?? defaults.minimumConfidence
+        maximumLabels = try container.decodeIfPresent(Int.self, forKey: .maximumLabels) ?? defaults.maximumLabels
+        maxLength = try container.decodeIfPresent(Int.self, forKey: .maxLength) ?? defaults.maxLength
     }
 }
 
@@ -125,6 +177,8 @@ struct RightsMetadata: Codable, Equatable {
         case keepExisting
         /// Derive from the filename, which is worth something once slugs are clean.
         case fromFilename
+        /// Use the on-device suggestion, falling back to nothing when there is none.
+        case fromAltText
         /// Write nothing, and remove anything inherited.
         case empty
     }

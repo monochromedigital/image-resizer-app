@@ -66,7 +66,8 @@ struct ResizeEngine {
                     onProgress(progress)
                     let destination = try resize(job: job)
                     outputs.insert(destination.deletingLastPathComponent())
-                    if let rendition = rendition(source: job.source, output: destination) {
+                    if var rendition = rendition(source: job.source, output: destination) {
+                        rendition.altText = job.altText
                         renditions.append(rendition)
                     }
                     progress.completed += 1
@@ -121,6 +122,7 @@ struct ResizeEngine {
             return try resizeToTargetSize(
                 source: source,
                 sourceURL: job.source,
+                altText: job.altText,
                 isRaw: isRaw,
                 outputURL: outputURL,
                 outputType: requestedType,
@@ -161,7 +163,7 @@ struct ResizeEngine {
             if OutputType.isLossy(requestedType) {
                 outputProperties[kCGImageDestinationLossyCompressionQuality] = settings.quality
             }
-            applyRights(to: &outputProperties, settings: settings, source: job.source)
+            applyRights(to: &outputProperties, settings: settings, source: job.source, altText: job.altText)
             // XMP has no property-dictionary equivalent, so writing xmpRights:WebStatement
             // or plus:Licensor means a different destination call. Only taken when there
             // is XMP to write — AddImage stays the path for everything else.
@@ -189,6 +191,7 @@ struct ResizeEngine {
     private static func resizeToTargetSize(
         source: CGImageSource,
         sourceURL: URL,
+        altText: String?,
         isRaw: Bool,
         outputURL: URL,
         outputType: CFString,
@@ -216,7 +219,7 @@ struct ResizeEngine {
             properties[kCGImagePropertyPixelWidth] = Int(frame.layout.outputSize.width)
             properties[kCGImagePropertyPixelHeight] = Int(frame.layout.outputSize.height)
             if settings.removeLocation { removeLocation(from: &properties) }
-            applyRights(to: &properties, settings: settings, source: sourceURL)
+            applyRights(to: &properties, settings: settings, source: sourceURL, altText: altText)
             frames.append(Frame(image: rendered, properties: properties))
         }
 
@@ -431,11 +434,12 @@ struct ResizeEngine {
     private static func applyRights(
         to properties: inout [CFString: Any],
         settings: ResizeSettings,
-        source: URL
+        source: URL,
+        altText: String?
     ) {
         guard let rights = settings.webExport?.rights, rights.hasContent else { return }
         let existing = properties[kCGImagePropertyIPTCDictionary] as? [CFString: Any]
-        if let iptc = RightsWriter.iptcDictionary(existing: existing, rights: rights, source: source) {
+        if let iptc = RightsWriter.iptcDictionary(existing: existing, rights: rights, source: source, altText: altText) {
             properties[kCGImagePropertyIPTCDictionary] = iptc
         }
     }

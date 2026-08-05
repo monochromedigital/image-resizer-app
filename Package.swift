@@ -17,7 +17,14 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle")
             ],
             linkerSettings: [
-                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
+                // FoundationModels does not exist before macOS 26 and the deployment
+                // target is 14, so a strong link would stop dyld launching the app on
+                // every older system. The toolchain already weak-links it, given the
+                // availability annotations — verified with otool both with and without
+                // this flag — so it is insurance against those guards being loosened
+                // later, not the thing making it work today.
+                .unsafeFlags(["-Xlinker", "-weak_framework", "-Xlinker", "FoundationModels"])
             ]
         )
     ]

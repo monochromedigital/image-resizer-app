@@ -1,6 +1,6 @@
 # Web Export — preset data model
 
-Status: **partially implemented**. Features 1–4 have shipped; 5–7 are still proposals.
+Status: **implemented**. All seven features have shipped.
 Corrections made once code met reality are in §10.
 
 Covers the data model for seven features that make Image Resizer output web- and
@@ -648,3 +648,21 @@ the output and mislabels wide-gamut sources on both encoding paths. Measuring it
 `stripSourceProfile` can only ever hold one value — the engine cannot preserve a
 wide-gamut pipeline, and a source profile is never valid for converted pixels. Modelling
 a setting that cannot vary invites someone to change it and expect something to happen.
+
+**Feature 7 was designed on a false premise.** This document, and the decision table in
+§8, said Foundation Models would return a sentence describing the image while Vision
+returned only labels — implying the two were alternative engines with the same input.
+They are not. The on-device language model **cannot see images**: its `Prompt` accepts
+strings only, confirmed against the SDK, where the word "image" does not appear in the
+interface at all.
+
+So the two are stages, not alternatives. Vision recognises and the language model
+phrases, and the `AltTextProvider` protocol with two interchangeable implementations was
+the wrong shape — it became one generator with an availability-gated phrasing step.
+
+The first working prompt also demonstrated why this feature needs care. Given the labels
+`liquid, drink, straw_drinking` from an abstract wallpaper, the model produced *"A woman
+drinking a popsicle from a straw"* — inventing a person present in neither the image nor
+the labels. Alt text that confidently describes something absent is worse than none, so
+the shipped instructions forbid introducing anything, offer an explicit way to decline,
+and sit behind a Vision confidence floor that stays silent rather than guessing.
