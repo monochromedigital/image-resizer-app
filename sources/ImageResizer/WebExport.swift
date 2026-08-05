@@ -208,6 +208,24 @@ struct Sidecars: Codable, Equatable {
         case base64DataURI
     }
 
+    /// The dialect the snippet is written in.
+    ///
+    /// Not a cosmetic choice. React ignores `srcset` and `fetchpriority` outright — an
+    /// HTML snippet pasted into a component keeps its `src` and silently loses the
+    /// responsive behaviour the export exists to provide, with nothing to show that it
+    /// has. Every other framework in common use takes plain HTML attributes.
+    enum Markup: String, Codable, CaseIterable {
+        case html
+        case jsx
+
+        var fileExtension: String {
+            switch self {
+            case .html: "html"
+            case .jsx: "jsx"
+            }
+        }
+    }
+
     /// How much of the page's width the image occupies.
     ///
     /// This is the half of a size ladder that decides whether it was worth building. A
@@ -244,6 +262,7 @@ struct Sidecars: Codable, Equatable {
     var markupSnippet: Bool
     var placeholder: PlaceholderMode
     var placeholderWidth: Int
+    var markupFlavour: Markup
     var layout: Layout
     /// The column width `fixedWidth` describes, in CSS pixels.
     var layoutMaxWidth: Int
@@ -267,6 +286,7 @@ struct Sidecars: Codable, Equatable {
         markupSnippet: Bool = true,
         placeholder: PlaceholderMode = .none,
         placeholderWidth: Int = 20,
+        markupFlavour: Markup = .html,
         layout: Layout = .fullWidth,
         layoutMaxWidth: Int = 800,
         sizesAttribute: String = "100vw",
@@ -279,6 +299,7 @@ struct Sidecars: Codable, Equatable {
         self.markupSnippet = markupSnippet
         self.placeholder = placeholder
         self.placeholderWidth = placeholderWidth
+        self.markupFlavour = markupFlavour
         self.layout = layout
         self.layoutMaxWidth = layoutMaxWidth
         self.sizesAttribute = sizesAttribute
@@ -303,6 +324,7 @@ struct Sidecars: Codable, Equatable {
         placeholderWidth = try container.decodeIfPresent(Int.self, forKey: .placeholderWidth) ?? defaults.placeholderWidth
         sizesAttribute = try container.decodeIfPresent(String.self, forKey: .sizesAttribute) ?? defaults.sizesAttribute
         layoutMaxWidth = try container.decodeIfPresent(Int.self, forKey: .layoutMaxWidth) ?? defaults.layoutMaxWidth
+        markupFlavour = try container.decodeIfPresent(Markup.self, forKey: .markupFlavour) ?? defaults.markupFlavour
         // A blob written before layouts existed carries only the typed attribute. Anything
         // other than the old default was deliberate, so it becomes a custom layout rather
         // than being silently overwritten by a generated value.
