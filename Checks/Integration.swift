@@ -442,6 +442,48 @@ struct IntegrationChecks {
         print("Rights metadata checks passed.")
 
 
+        // Smart cropping, end to end. A 1000×500 source cropped to a 500×500 square keeps
+        // the middle and throws both ends away, so a subject at the left edge is exactly
+        // what a centre crop loses — and what the focus point has to bring back.
+        let cropRoot = root.appendingPathComponent("Crop", isDirectory: true)
+        try manager.createDirectory(at: cropRoot, withIntermediateDirectories: true)
+        let cropSource = cropRoot.appendingPathComponent("subject.png")
+        try makeMarkedPNG(
+            at: cropSource, width: 1_000, height: 500,
+            marker: CGRect(x: 0, y: 200, width: 100, height: 100)
+        )
+        var cropSettings = settings
+        cropSettings.mode = .fill
+        cropSettings.width = 500
+        cropSettings.height = 500
+        cropSettings.format = .png
+
+        let centred = try ResizeEngine.resize(job: ResizeJob(
+            source: cropSource,
+            output: cropRoot.appendingPathComponent("centred.png"),
+            settings: cropSettings
+        ))
+        var focusedSettings = cropSettings
+        focusedSettings.focus = CGPoint(x: 0.05, y: 0.5)
+        let focused = try ResizeEngine.resize(job: ResizeJob(
+            source: cropSource,
+            output: cropRoot.appendingPathComponent("focused.png"),
+            settings: focusedSettings
+        ))
+
+        // The marker sits at x 0–100 of the source. A centre crop starts at x 250, so it
+        // cannot contain it; anchored on the subject, the crop starts at x 0 and does.
+        guard let centredPixel = samplePixel(centred, x: 50, fromBottom: 250),
+              let focusedPixel = samplePixel(focused, x: 50, fromBottom: 250) else {
+            preconditionFailure("could not sample the crops")
+        }
+        precondition(centredPixel.red < 100, "the centre crop should have missed the subject: \(centredPixel)")
+        precondition(
+            focusedPixel.red > 200 && focusedPixel.green < 100,
+            "the anchored crop should contain the subject: \(focusedPixel)"
+        )
+        print("Smart crop checks passed.")
+
         // Sidecars end to end: a real laddered batch, then the manifest and markup read
         // back off disk. This is what plan-time naming was for — the manifest describes
         // files by the names they were actually written under.
@@ -762,6 +804,48 @@ struct IntegrationChecks {
         let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
         CGImageDestinationAddImage(destination, image, nil)
         precondition(CGImageDestinationFinalize(destination))
+    }
+
+    /// A dark frame with one bright marker in it, so a crop can be asked whether it kept
+    /// the subject. `marker` is in image coordinates with the origin at the bottom left.
+    static func makeMarkedPNG(at url: URL, width: Int, height: Int, marker: CGRect) throws {
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(marker)
+        let image = context.makeImage()!
+        let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, image, nil)
+        precondition(CGImageDestinationFinalize(destination))
+    }
+
+    /// One pixel of a written file, in image coordinates with the origin at the bottom
+    /// left — the same space the crop maths uses, so the assertion reads like the maths.
+    static func samplePixel(
+        _ url: URL,
+        x: Int,
+        fromBottom y: Int
+    ) -> (red: UInt8, green: UInt8, blue: UInt8)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let context = CGContext(
+            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        // Slide the image so the wanted pixel lands on the context's only one.
+        context.draw(
+            image,
+            in: CGRect(x: -x, y: -y, width: image.width, height: image.height)
+        )
+        return (pixel[0], pixel[1], pixel[2])
     }
 
     static func makeDetailedPNG(at url: URL, width: Int, height: Int) throws {
