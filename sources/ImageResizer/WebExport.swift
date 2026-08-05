@@ -132,6 +132,8 @@ struct Sidecars: Codable, Equatable {
     /// Prepended to every path in the manifest and markup, so the output describes where
     /// the files will live rather than where they were written.
     var pathPrefix: String
+    /// Whether the markup carries a schema.org `ImageObject` for each image.
+    var structuredData: Bool
     /// Whether the first image of a run is marked up as the one to load first.
     ///
     /// Batch order is the only granularity available — the sidebar lists sources and a
@@ -146,8 +148,10 @@ struct Sidecars: Codable, Equatable {
         placeholderWidth: Int = 20,
         sizesAttribute: String = "100vw",
         pathPrefix: String = "",
+        structuredData: Bool = true,
         prioritiseFirstImage: Bool = true
     ) {
+        self.structuredData = structuredData
         self.manifest = manifest
         self.markupSnippet = markupSnippet
         self.placeholder = placeholder
@@ -169,6 +173,7 @@ struct Sidecars: Codable, Equatable {
         placeholderWidth = try container.decodeIfPresent(Int.self, forKey: .placeholderWidth) ?? defaults.placeholderWidth
         sizesAttribute = try container.decodeIfPresent(String.self, forKey: .sizesAttribute) ?? defaults.sizesAttribute
         pathPrefix = try container.decodeIfPresent(String.self, forKey: .pathPrefix) ?? defaults.pathPrefix
+        structuredData = try container.decodeIfPresent(Bool.self, forKey: .structuredData) ?? defaults.structuredData
         prioritiseFirstImage = try container.decodeIfPresent(Bool.self, forKey: .prioritiseFirstImage)
             ?? defaults.prioritiseFirstImage
     }
@@ -193,7 +198,25 @@ struct RightsMetadata: Codable, Equatable {
         case empty
     }
 
+    /// Whether the creator is a person or a company.
+    ///
+    /// Only structured data needs the distinction, and a name cannot supply it — "Monochrome
+    /// Digital" and "Jane Fisher" are the same kind of string. A person is the default
+    /// because this field maps to IPTC's Byline, which is defined as the photographer.
+    enum CreatorType: String, Codable, CaseIterable {
+        case person
+        case organization
+
+        var schemaType: String {
+            switch self {
+            case .person: "Person"
+            case .organization: "Organization"
+            }
+        }
+    }
+
     var creator: String?
+    var creatorType: CreatorType
     var copyrightNotice: String?
     var credit: String?
     /// A page describing your terms. Stored and written as text; never fetched.
@@ -205,6 +228,7 @@ struct RightsMetadata: Codable, Equatable {
 
     init(
         creator: String? = nil,
+        creatorType: CreatorType = .person,
         copyrightNotice: String? = nil,
         credit: String? = nil,
         webStatementURL: String? = nil,
@@ -213,6 +237,7 @@ struct RightsMetadata: Codable, Equatable {
         descriptionPolicy: TextPolicy = .keepExisting
     ) {
         self.creator = creator
+        self.creatorType = creatorType
         self.copyrightNotice = copyrightNotice
         self.credit = credit
         self.webStatementURL = webStatementURL
@@ -234,6 +259,7 @@ struct RightsMetadata: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         creator = try container.decodeIfPresent(String.self, forKey: .creator)
+        creatorType = try container.decodeIfPresent(CreatorType.self, forKey: .creatorType) ?? .person
         copyrightNotice = try container.decodeIfPresent(String.self, forKey: .copyrightNotice)
         credit = try container.decodeIfPresent(String.self, forKey: .credit)
         webStatementURL = try container.decodeIfPresent(String.self, forKey: .webStatementURL)
