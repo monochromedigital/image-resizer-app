@@ -456,11 +456,23 @@ struct IntegrationChecks {
             isEnabled: true,
             naming: Naming(template: "{slug}-{width}"),
             ladder: Ladder(widths: [400, 800]),
+            // WebP rather than AVIF, because this has to fan out on every machine the
+            // checks run on and only macOS 26 can write AVIF. It also exercises the
+            // subprocess encoder, which is the path a matrix is most likely to break.
+            formats: FormatPlan(alternatives: [FormatPlan.Entry(format: .webp)]),
             rights: RightsMetadata(titlePolicy: .fromFilename),
             sidecars: Sidecars(placeholder: .base64DataURI, pathPrefix: "/images")
         )
         let (sidecarJobs, sidecarOutputs, sidecarSkipped) = try JobPlanner.plan(sources: [sidecarRoot], settings: sidecarSettings)
-        precondition(sidecarJobs.count == 2, "expected two rungs")
+        precondition(sidecarJobs.count == 4, "expected two rungs in two formats, got \(sidecarJobs.count)")
+        // Names are resolved at plan time, and a format is part of what makes one unique —
+        // two rungs colliding into one name would show up here as a `-2` suffix.
+        precondition(
+            Set(sidecarJobs.map(\.output.lastPathComponent)) == [
+                "cafe-sign-400.jpg", "cafe-sign-800.jpg", "cafe-sign-400.webp", "cafe-sign-800.webp"
+            ],
+            "planned names: \(sidecarJobs.map(\.output.lastPathComponent))"
+        )
         // Through the real batch loop, so the engine's own rendition recording — the
         // dimensions and byte counts the manifest is built from — is what gets checked.
         let batch = await ResizeEngine.process(
@@ -469,7 +481,7 @@ struct IntegrationChecks {
             control: ProcessingControl()
         ) { _ in }
         precondition(batch.progress.failed == 0, "sidecar batch failed: \(batch.errors)")
-        precondition(batch.renditions.count == 2, "the batch recorded \(batch.renditions.count) renditions")
+        precondition(batch.renditions.count == 4, "the batch recorded \(batch.renditions.count) renditions")
         precondition(batch.renditions.allSatisfy { $0.bytes > 0 }, "renditions must record real byte counts")
         precondition(batch.renditions.contains { $0.width == 400 }, "the 400 rung was recorded")
         let sidecarFiles = try SidecarWriter.write(
@@ -487,9 +499,18 @@ struct IntegrationChecks {
         }
         precondition((first["slug"] as? String) == "cafe-sign", "manifest slug: \(String(describing: first["slug"]))")
         precondition((first["source"] as? String) == "IMG_4821 Café Sign.png", "manifest names the source")
-        precondition(manifestRenditions.count == 2, "manifest lists every rendition")
-        precondition((manifestRenditions[0]["path"] as? String) == "/images/cafe-sign-400.jpg", "manifest path: \(manifestRenditions[0])")
+        precondition(manifestRenditions.count == 4, "manifest lists every rendition")
+        // Grouped by format, the alternative first, each group ascending by width — the
+        // order the markup offers them in.
+        precondition(
+            manifestRenditions.compactMap { $0["path"] as? String } == [
+                "/images/cafe-sign-400.webp", "/images/cafe-sign-800.webp",
+                "/images/cafe-sign-400.jpg", "/images/cafe-sign-800.jpg"
+            ],
+            "manifest paths: \(manifestRenditions.compactMap { $0["path"] as? String })"
+        )
         precondition((manifestRenditions[0]["width"] as? Int) == 400, "manifest width")
+        precondition((manifestRenditions[0]["format"] as? String) == "webp", "manifest names each format")
         precondition((manifestRenditions[0]["bytes"] as? Int ?? 0) > 0, "manifest records real byte counts")
         precondition((first["placeholder"] as? String)?.hasPrefix("data:image/jpeg;base64,") == true, "placeholder is an inline data URI")
 
@@ -503,6 +524,17 @@ struct IntegrationChecks {
         // batch's rights are a title policy alone.
         precondition(snippet.contains("application/ld+json"), "the written snippet carries structured data")
         precondition(snippet.contains("\"@type\" : \"ImageObject\""), "structured data types the image: \(snippet)")
+        // The whole point of the matrix: real files in both formats, offered as a choice.
+        precondition(snippet.contains("<picture>"), "the written snippet wraps the alternatives")
+        precondition(snippet.contains("<source type=\"image/webp\""), "the alternative is offered by type")
+        precondition(
+            snippet.contains("srcset=\"/images/cafe-sign-400.webp 400w, /images/cafe-sign-800.webp 800w\""),
+            "the source carries its own ladder: \(snippet)"
+        )
+        for name in ["cafe-sign-400.webp", "cafe-sign-800.webp", "cafe-sign-400.jpg", "cafe-sign-800.jpg"] {
+            let file = sidecarOutputs[0].appendingPathComponent(name)
+            precondition(manager.fileExists(atPath: file.path), "\(name) was not written")
+        }
         print("Sidecar checks passed.")
 
 

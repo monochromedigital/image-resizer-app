@@ -15,6 +15,7 @@ struct WebExport: Codable, Equatable {
     var isEnabled: Bool
     var naming: Naming?
     var ladder: Ladder?
+    var formats: FormatPlan?
     var color: ColorPolicy?
     var rights: RightsMetadata?
     var sidecars: Sidecars?
@@ -25,6 +26,7 @@ struct WebExport: Codable, Equatable {
         isEnabled: Bool = false,
         naming: Naming? = nil,
         ladder: Ladder? = nil,
+        formats: FormatPlan? = nil,
         color: ColorPolicy? = nil,
         rights: RightsMetadata? = nil,
         sidecars: Sidecars? = nil,
@@ -34,6 +36,7 @@ struct WebExport: Codable, Equatable {
         self.isEnabled = isEnabled
         self.naming = naming
         self.ladder = ladder
+        self.formats = formats
         self.color = color
         self.rights = rights
         self.sidecars = sidecars
@@ -55,6 +58,7 @@ struct WebExport: Codable, Equatable {
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
         naming = try container.decodeIfPresent(Naming.self, forKey: .naming)
         ladder = try container.decodeIfPresent(Ladder.self, forKey: .ladder)
+        formats = try container.decodeIfPresent(FormatPlan.self, forKey: .formats)
         color = try container.decodeIfPresent(ColorPolicy.self, forKey: .color)
         rights = try container.decodeIfPresent(RightsMetadata.self, forKey: .rights)
         sidecars = try container.decodeIfPresent(Sidecars.self, forKey: .sidecars)
@@ -107,6 +111,55 @@ struct AltText: Codable, Equatable {
             ?? defaults.minimumConfidence
         maximumLabels = try container.decodeIfPresent(Int.self, forKey: .maximumLabels) ?? defaults.maximumLabels
         maxLength = try container.decodeIfPresent(Int.self, forKey: .maxLength) ?? defaults.maxLength
+    }
+}
+
+/// Extra formats to write each image in, beyond the run's own.
+///
+/// The run's format stays the fallback — the one every browser can read and the one the
+/// `<img>` points at. These are the alternatives offered ahead of it, and the order is
+/// load-bearing: a browser takes the first `<source>` it understands, so the most
+/// efficient format has to come first.
+struct FormatPlan: Codable, Equatable {
+    struct Entry: Codable, Equatable {
+        var format: OutputFormat
+        /// `nil` inherits the run's quality, which is what the UI offers today.
+        var quality: Double?
+
+        init(format: OutputFormat, quality: Double? = nil) {
+            self.format = format
+            self.quality = quality
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            format = try container.decodeIfPresent(OutputFormat.self, forKey: .format) ?? .webp
+            quality = try container.decodeIfPresent(Double.self, forKey: .quality)
+        }
+    }
+
+    /// Most efficient first. Anything absent from this list keeps its natural order.
+    static let ordering: [OutputFormat] = [.avif, .webp]
+
+    var alternatives: [Entry]
+
+    init(alternatives: [Entry] = []) {
+        self.alternatives = alternatives
+    }
+
+    /// Lenient for the same reason `WebExport`'s is — see the note there.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        alternatives = try container.decodeIfPresent([Entry].self, forKey: .alternatives) ?? []
+    }
+
+    /// Sorted so the markup offers the most efficient format first.
+    static func sorted(_ entries: [Entry]) -> [Entry] {
+        entries.enumerated().sorted { left, right in
+            let leftRank = ordering.firstIndex(of: left.element.format) ?? ordering.count
+            let rightRank = ordering.firstIndex(of: right.element.format) ?? ordering.count
+            return leftRank == rightRank ? left.offset < right.offset : leftRank < rightRank
+        }.map(\.element)
     }
 }
 

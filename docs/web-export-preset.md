@@ -649,6 +649,15 @@ the output and mislabels wide-gamut sources on both encoding paths. Measuring it
 wide-gamut pipeline, and a source profile is never valid for converted pixels. Modelling
 a setting that cannot vary invites someone to change it and expect something to happen.
 
+**`FormatPlan` shipped smaller than §1 describes.** The designed type had `sources: [Entry]`
+and a `fallback: Entry`, each entry carrying its own quality and target file size. What
+shipped is `alternatives: [Entry]`, with the run's existing format serving as the
+fallback — because the format picker and the quality slider already exist in the UI, and a
+second copy of both inside the plan would be two places to set the same thing. Per-entry
+target file sizes went the same way: an alternative inherits the run's limit, and drops it
+when the format is lossless. The ordered-list decision in §1 stands and is what makes the
+`<picture>` order correct.
+
 **Feature 7 was designed on a false premise.** This document, and the decision table in
 §8, said Foundation Models would return a sentence describing the image while Vision
 returned only labels — implying the two were alternative engines with the same input.

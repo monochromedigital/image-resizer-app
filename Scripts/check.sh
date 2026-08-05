@@ -19,6 +19,7 @@ SDKROOT="$SDK" CLANG_MODULE_CACHE_PATH="$MODULE_CACHE" swiftc \
   "$ROOT/Sources/ImageResizer/WebExport.swift" \
   "$ROOT/Sources/ImageResizer/OutputNaming.swift" \
   "$ROOT/Sources/ImageResizer/SizeLadder.swift" \
+  "$ROOT/Sources/ImageResizer/FormatMatrix.swift" \
   "$ROOT/Sources/ImageResizer/RightsWriter.swift" \
   "$ROOT/Sources/ImageResizer/SidecarWriter.swift" \
   "$ROOT/Sources/ImageResizer/AltTextGenerator.swift" \
@@ -33,6 +34,7 @@ SDKROOT="$SDK" CLANG_MODULE_CACHE_PATH="$MODULE_CACHE" swiftc -parse-as-library 
   "$ROOT/Sources/ImageResizer/WebExport.swift" \
   "$ROOT/Sources/ImageResizer/OutputNaming.swift" \
   "$ROOT/Sources/ImageResizer/SizeLadder.swift" \
+  "$ROOT/Sources/ImageResizer/FormatMatrix.swift" \
   "$ROOT/Sources/ImageResizer/RightsWriter.swift" \
   "$ROOT/Sources/ImageResizer/SidecarWriter.swift" \
   "$ROOT/Sources/ImageResizer/AltTextGenerator.swift" \

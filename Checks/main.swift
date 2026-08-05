@@ -451,6 +451,63 @@ check(RightsWriter.metadata(rights: RightsMetadata(creator: "Someone")) == nil, 
 check(RightsWriter.metadata(rights: RightsMetadata(webStatementURL: "https://example.test")) != nil, "a web statement needs XMP")
 check(RightsWriter.xmpPacket(rights: RightsMetadata(licensorURL: "https://example.test")) != nil, "a licensor produces an XMP packet")
 
+// The format matrix. Like the ladder, it is settings-in, settings-out, so the whole
+// feature is decidable here without touching an encoder. `writable` is passed explicitly
+// so these do not pass or fail on whether this particular Mac can write AVIF.
+private func withFormats(_ alternatives: [OutputFormat], base: OutputFormat = .jpeg) -> ResizeSettings {
+    var configured = settings(mode: .fit, width: 800)
+    configured.format = base
+    configured.webExport = WebExport(
+        isEnabled: true,
+        formats: FormatPlan(alternatives: alternatives.map { FormatPlan.Entry(format: $0) })
+    )
+    return configured
+}
+let everything: [OutputFormat] = [.jpeg, .png, .webp, .avif, .heic]
+check(
+    FormatMatrix.expand(settings(mode: .fit, width: 800), writable: everything).count == 1,
+    "no plan leaves the settings alone"
+)
+// Fallback last, because the markup falls through to the <img> and that has to be the
+// format every browser can read.
+check(
+    FormatMatrix.expand(withFormats([.webp, .avif]), writable: everything).map(\.format)
+        == [.avif, .webp, .jpeg],
+    "alternatives come first, most efficient first, fallback last"
+)
+// A format this Mac cannot write must drop out of the plan rather than fail at encode
+// time — the whole point of probing ImageIO instead of testing an OS version.
+check(
+    FormatMatrix.expand(withFormats([.webp, .avif]), writable: [.jpeg, .webp]).map(\.format)
+        == [.webp, .jpeg],
+    "an unwritable alternative is dropped"
+)
+check(
+    FormatMatrix.expand(withFormats([.jpeg, .webp]), writable: everything).map(\.format)
+        == [.webp, .jpeg],
+    "an alternative repeating the fallback is dropped"
+)
+check(
+    FormatMatrix.expand(withFormats([.original, .webp]), writable: everything).map(\.format)
+        == [.webp, .jpeg],
+    "keep original is not an alternative to anything"
+)
+// A size limit is met by trading quality away, which PNG cannot do. Carrying the flag
+// onto it would make a correctly configured run invalid.
+var limitedFormats = withFormats([.png, .webp])
+limitedFormats.targetFileSizeEnabled = true
+limitedFormats.targetFileSizeBytes = 200_000
+let limited = FormatMatrix.expand(limitedFormats, writable: everything)
+check(limited.allSatisfy(\.isValid), "every derived rung is runnable")
+check(
+    limited.first { $0.format == .png }?.targetFileSizeEnabled == false,
+    "a lossless alternative drops the size limit"
+)
+check(
+    limited.first { $0.format == .webp }?.targetFileSizeEnabled == true,
+    "a lossy alternative keeps the size limit"
+)
+
 // Sidecar paths and markup are string assembly, so they are pinned here rather than only
 // end to end.
 private func rendition(_ name: String, _ width: Int, _ height: Int, _ bytes: Int = 100) -> Rendition {
@@ -571,6 +628,64 @@ check(
 check(
     SidecarWriter.structuredData(for: entries, settings: noRights, sidecars: sidecarDefaults) == nil,
     "no rights and no alt text yields no structured data"
+)
+
+// <picture>. One source written in two formats: the alternative is offered as a <source>
+// and the fallback stays the <img>, so a browser understanding neither still gets a file.
+var pictureSettings = sidecarSettings
+pictureSettings.webExport?.formats = FormatPlan(alternatives: [FormatPlan.Entry(format: .webp)])
+let pictureEntries = SidecarWriter.group(
+    [
+        rendition("cafe-sign-800.webp", 800, 450), rendition("cafe-sign-400.webp", 400, 225),
+        rendition("cafe-sign-800.jpg", 800, 450), rendition("cafe-sign-400.jpg", 400, 225)
+    ],
+    settings: pictureSettings,
+    sidecars: sidecarDefaults
+)
+check(pictureEntries.count == 1, "several formats of one source stay one entry")
+check(
+    pictureEntries[0].formats.map(\.fileExtension) == ["webp", "jpg"],
+    "the fallback format sorts last: \(pictureEntries[0].formats.map(\.fileExtension))"
+)
+check(pictureEntries[0].renditions.count == 4, "the manifest still sees every rendition")
+let picture = SidecarWriter.markup(
+    for: pictureEntries[0], settings: pictureSettings, sidecars: sidecarDefaults
+)
+check(
+    picture.hasPrefix("<picture>") && picture.hasSuffix("</picture>"),
+    "alternatives earn the wrapper: \(picture)"
+)
+check(picture.contains("<source type=\"image/webp\""), "the alternative advertises its media type")
+check(
+    picture.contains("srcset=\"/images/cafe-sign-400.webp 400w, /images/cafe-sign-800.webp 800w\""),
+    "the source lists its own ladder: \(picture)"
+)
+// A browser reaches the <img> precisely because it could not decode the alternatives, so
+// offering it one of them there would hand it the file it just refused.
+check(
+    picture.contains("srcset=\"/images/cafe-sign-400.jpg 400w, /images/cafe-sign-800.jpg 800w\""),
+    "the img srcset is the fallback format alone: \(picture)"
+)
+check(picture.contains("src=\"/images/cafe-sign-800.jpg\""), "the img src is the fallback format")
+// Structured data describes one canonical file, and it has to be the readable one.
+guard let pictureBlock = SidecarWriter.structuredData(
+    for: pictureEntries, settings: licensedSettings, sidecars: sidecarDefaults
+), let pictureOpen = pictureBlock.firstIndex(of: "{"), let pictureClose = pictureBlock.lastIndex(of: "}"),
+   let pictureParsed = try? JSONSerialization.jsonObject(
+       with: Data(pictureBlock[pictureOpen...pictureClose].utf8)
+   ) as? [String: Any] else {
+    FileHandle.standardError.write(Data("FAILED: no structured data for a multi-format entry\n".utf8))
+    exit(1)
+}
+check(
+    (pictureParsed["contentUrl"] as? String) == "/images/cafe-sign-800.jpg",
+    "structured data points at the fallback format"
+)
+// One format is not a choice, so the wrapper is not earned.
+check(
+    SidecarWriter.markup(for: entries[0], settings: sidecarSettings, sidecars: sidecarDefaults)
+        .hasPrefix("<img "),
+    "a single format stays a bare img"
 )
 
 // Alt text. The model-facing parts need a model, but the tidying that guards against its

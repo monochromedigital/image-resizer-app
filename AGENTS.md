@@ -84,6 +84,7 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
 | `WebExport.swift` | The web-export config tree: `WebExport` plus its per-feature sub-structs (`Naming`, `Ladder`, `AspectRatio`). All `Codable`, all leniently decoded. |
 | `OutputNaming.swift` | Filename construction — slugging, transliteration, `{token}` templates — plus `NameReservations`, which hands out collision-free output URLs. |
 | `SizeLadder.swift` | `expand(_:sourceSize:)`: one `ResizeSettings` in, one per ladder rung out. Pure. |
+| `FormatMatrix.swift` | `expand(_:writable:)`: the same trick for formats, fallback last. Filters out what ImageIO cannot write and what would duplicate the fallback. Pure. |
 | `RightsWriter.swift` | The only place metadata is *authored*. Builds the IPTC dictionary and the `CGImageMetadata` for XMP-only fields. |
 | `SidecarWriter.swift` | `manifest.json`, `snippet.html`, and inline placeholders, assembled from the renditions a batch recorded. |
 | `AltTextGenerator.swift` | On-device alt text: Vision classifies, the on-device language model phrases. Both stages local. |
@@ -101,7 +102,9 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
 - **One job → one output file.** `ResizeEngine.resize` returns a single `URL`, and
   `progress.completed += 1` counts jobs. Anything that fans one source out to several
   outputs fans out in `JobPlanner`, producing more `ResizeJob`s — that is how the size
-  ladder works, and it is why the engine needed no changes for it.
+  ladder and the format matrix both work, and it is why the engine needed no changes for
+  either. They compose: formats outermost, rungs within, so one source's files stay
+  contiguous and in the order the markup offers them.
 - **Filenames are resolved at plan time, not during encoding.** `JobPlanner` fills in
   `ResizeJob.output` completely: extension, naming template, and collision suffix.
   `NameReservations` checks both the batch's own reservations and the disk, so two
@@ -258,7 +261,7 @@ those are the claims most likely to mislead: force-sRGB turned out to be a no-op
 ImageIO path and a real bug only on the WebP one, and the alt-text feature was designed
 on a false premise about what the on-device language model can see.
 
-**One piece of that design was never built: `FormatPlan`, the ordered list of output
-formats per run.** `WebExport` has no `formats` property, so a run produces a single
-format, and `SidecarWriter.markup` emits an `<img>` with a `srcset` rather than a
-`<picture>` with format alternatives. The comment above that function marks the spot.
+`FormatPlan` shipped last and shipped smaller than designed: it carries a list of
+**alternative** formats, and the run's own format stays the fallback rather than being a
+plan entry of its own. Per-entry target file sizes were not built — an alternative
+inherits the run's quality and size limit, minus the limit if the format is lossless.

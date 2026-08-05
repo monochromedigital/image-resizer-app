@@ -344,6 +344,24 @@ enum OutputType {
         }
     }
 
+    /// The media type a `<source>` element needs to advertise a format.
+    ///
+    /// Keyed by extension rather than by `OutputFormat` because the sidecars describe
+    /// files that are already on disk, and "Keep Original" means the format a rendition
+    /// ended up in is only knowable from its name.
+    static func mimeType(forExtension fileExtension: String) -> String? {
+        switch fileExtension.lowercased() {
+        case "jpg", "jpeg": "image/jpeg"
+        case "png": "image/png"
+        case "heic": "image/heic"
+        case "tiff", "tif": "image/tiff"
+        case "gif": "image/gif"
+        case "webp": "image/webp"
+        case "avif": "image/avif"
+        default: nil
+        }
+    }
+
     /// Types that honour `kCGImageDestinationLossyCompressionQuality`. Anything else
     /// ignores the quality slider, so setting it would be misleading.
     static func isLossy(_ type: CFString) -> Bool {
