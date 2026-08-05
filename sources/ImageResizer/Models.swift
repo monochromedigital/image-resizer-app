@@ -183,6 +183,16 @@ struct BatchProgress: Equatable {
     var fraction: Double { total == 0 ? 0 : Double(processed) / Double(total) }
 }
 
+/// What a written file is for.
+///
+/// A share image is a fixed shape rather than a step on a ladder, so it must not reach a
+/// `srcset` — a browser offered it would pick a 1200-wide crop for a layout that asked
+/// for a 1200-wide photograph and get a different picture.
+enum RenditionRole: String, Equatable {
+    case responsive
+    case social
+}
+
 /// One written file, recorded so the sidecars can describe the output set without
 /// re-deriving anything.
 struct Rendition: Equatable {
@@ -192,6 +202,7 @@ struct Rendition: Equatable {
     let height: Int
     let bytes: Int
     var altText: String? = nil
+    var role: RenditionRole = .responsive
 
     var format: String { output.pathExtension.lowercased() }
 }
@@ -317,6 +328,9 @@ struct ResizeJob {
     /// Filled in before the batch starts, when alt text is switched on. Defaulted so the
     /// planner and the checks need not supply it.
     var altText: String? = nil
+    /// Travels to the `Rendition` the engine records, which is where it decides whether
+    /// this file belongs in a `srcset` or in a meta tag.
+    var role: RenditionRole = .responsive
 }
 
 /// Decides which container type an output is written as.

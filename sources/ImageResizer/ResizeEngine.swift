@@ -66,7 +66,7 @@ struct ResizeEngine {
                     onProgress(progress)
                     let destination = try resize(job: job)
                     outputs.insert(destination.deletingLastPathComponent())
-                    if var rendition = rendition(source: job.source, output: destination) {
+                    if var rendition = rendition(source: job.source, output: destination, role: job.role) {
                         rendition.altText = job.altText
                         renditions.append(rendition)
                     }
@@ -416,14 +416,14 @@ struct ResizeEngine {
     /// Records what was actually written, read back from the file's header rather than
     /// from what was requested — the two can differ, and the sidecars describe files a
     /// browser will fetch, so they have to match reality.
-    private static func rendition(source: URL, output: URL) -> Rendition? {
+    private static func rendition(source: URL, output: URL, role: RenditionRole) -> Rendition? {
         guard let imageSource = CGImageSourceCreateWithURL(output as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
               let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
               let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue
         else { return nil }
         let bytes = (try? FileManager.default.attributesOfItem(atPath: output.path)[.size] as? Int) ?? 0
-        return Rendition(source: source, output: output, width: width, height: height, bytes: bytes ?? 0)
+        return Rendition(source: source, output: output, width: width, height: height, bytes: bytes, role: role)
     }
 
     private static func rightsMetadata(for settings: ResizeSettings) -> CGImageMetadata? {

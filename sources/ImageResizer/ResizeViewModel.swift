@@ -108,7 +108,13 @@ final class ResizeViewModel: ObservableObject {
                     let suggestions = await AltTextGenerator.generate(for: uniqueSources, settings: altSettings)
                     if !suggestions.isEmpty {
                         jobs = jobs.map {
-                            ResizeJob(source: $0.source, output: $0.output, settings: $0.settings, altText: suggestions[$0.source])
+                            ResizeJob(
+                                source: $0.source,
+                                output: $0.output,
+                                settings: $0.settings,
+                                altText: suggestions[$0.source],
+                                role: $0.role
+                            )
                         }
                     }
                 }

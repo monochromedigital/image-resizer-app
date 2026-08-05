@@ -548,6 +548,19 @@ check(
     "a lossy alternative keeps the size limit"
 )
 
+// The link-preview crop. A share image is a different picture from a ladder rung, so the
+// checks that matter are the ones keeping it out of places that describe the same picture
+// at several sizes.
+private func socialRendition(_ name: String, _ width: Int, _ height: Int) -> Rendition {
+    Rendition(
+        source: URL(fileURLWithPath: "/Photos/IMG_4821 Café Sign.jpg"),
+        output: URL(fileURLWithPath: "/Out/\(name)"),
+        width: width, height: height, bytes: 100, role: .social
+    )
+}
+check(SocialImage().isValid, "the default preview size is usable")
+check(!SocialImage(width: 0).isValid, "a half-typed size is not")
+
 // Sidecar paths and markup are string assembly, so they are pinned here rather than only
 // end to end.
 private func rendition(_ name: String, _ width: Int, _ height: Int, _ bytes: Int = 100) -> Rendition {
@@ -732,6 +745,58 @@ check(
     (pictureParsed["contentUrl"] as? String) == "/images/cafe-sign-800.jpg",
     "structured data points at the fallback format"
 )
+// A share image alongside the ladder: it must reach the meta tags and nothing else.
+var shareSettings = sidecarSettings
+shareSettings.webExport?.social = SocialImage()
+let shareEntries = SidecarWriter.group(
+    [
+        rendition("cafe-sign-400.jpg", 400, 225), rendition("cafe-sign-800.jpg", 800, 450),
+        socialRendition("cafe-sign-social.jpg", 1_200, 630)
+    ],
+    settings: shareSettings,
+    sidecars: sidecarDefaults
+)
+check(shareEntries[0].socialImage?.width == 1_200, "the share image is kept aside")
+// The failure this guards against: a 1200-wide crop offered as a 1200-wide photograph.
+check(
+    shareEntries[0].renditions.allSatisfy { $0.role == .responsive },
+    "the share image is not a rendition of the same picture"
+)
+let shareMarkup = SidecarWriter.markup(
+    for: shareEntries[0], settings: shareSettings, sidecars: sidecarDefaults
+)
+check(!shareMarkup.contains("cafe-sign-social"), "the share image never reaches a srcset: \(shareMarkup)")
+check(
+    shareEntries[0].fallback?.width == 800,
+    "the largest responsive rendition is still the fallback"
+)
+guard let tags = SidecarWriter.socialTags(for: shareEntries[0], sidecars: sidecarDefaults) else {
+    FileHandle.standardError.write(Data("FAILED: no meta tags for a share image\n".utf8))
+    exit(1)
+}
+check(
+    tags.contains("<meta property=\"og:image\" content=\"/images/cafe-sign-social.jpg\">"),
+    "og:image points at the crop: \(tags)"
+)
+check(tags.contains("<meta property=\"og:image:width\" content=\"1200\">"), "og:image:width")
+check(tags.contains("<meta property=\"og:image:height\" content=\"630\">"), "og:image:height")
+check(tags.contains("summary_large_image"), "the card is the large one")
+check(
+    SidecarWriter.socialTags(for: entries[0], sidecars: sidecarDefaults) == nil,
+    "no share image, no tags"
+)
+// Structured data describes the photograph, and the crop is not it.
+check(
+    (try? JSONSerialization.jsonObject(with: Data({
+        let block = SidecarWriter.structuredData(
+            for: shareEntries, settings: licensedSettings, sidecars: sidecarDefaults
+        ) ?? ""
+        guard let open = block.firstIndex(of: "{"), let close = block.lastIndex(of: "}") else { return "" }
+        return String(block[open...close])
+    }().utf8)) as? [String: Any])?["contentUrl"] as? String == "/images/cafe-sign-800.jpg",
+    "structured data ignores the share image"
+)
+
 // One format is not a choice, so the wrapper is not earned.
 check(
     SidecarWriter.markup(for: entries[0], settings: sidecarSettings, sidecars: sidecarDefaults)

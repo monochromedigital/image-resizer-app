@@ -156,6 +156,15 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    var isSocialImageEnabled: Bool {
+        get { webExport.social != nil }
+        set {
+            var updated = webExport
+            updated.social = newValue ? (updated.social ?? SocialImage()) : nil
+            webExport = updated
+        }
+    }
+
     /// Assigns every field the preset asserts, leaving `nil` fields untouched.
     ///
     /// `webExport` is replaced wholesale rather than merged field by field: partially

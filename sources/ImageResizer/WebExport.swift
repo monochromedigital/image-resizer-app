@@ -16,6 +16,7 @@ struct WebExport: Codable, Equatable {
     var naming: Naming?
     var ladder: Ladder?
     var formats: FormatPlan?
+    var social: SocialImage?
     var color: ColorPolicy?
     var rights: RightsMetadata?
     var sidecars: Sidecars?
@@ -27,6 +28,7 @@ struct WebExport: Codable, Equatable {
         naming: Naming? = nil,
         ladder: Ladder? = nil,
         formats: FormatPlan? = nil,
+        social: SocialImage? = nil,
         color: ColorPolicy? = nil,
         rights: RightsMetadata? = nil,
         sidecars: Sidecars? = nil,
@@ -37,6 +39,7 @@ struct WebExport: Codable, Equatable {
         self.naming = naming
         self.ladder = ladder
         self.formats = formats
+        self.social = social
         self.color = color
         self.rights = rights
         self.sidecars = sidecars
@@ -59,6 +62,7 @@ struct WebExport: Codable, Equatable {
         naming = try container.decodeIfPresent(Naming.self, forKey: .naming)
         ladder = try container.decodeIfPresent(Ladder.self, forKey: .ladder)
         formats = try container.decodeIfPresent(FormatPlan.self, forKey: .formats)
+        social = try container.decodeIfPresent(SocialImage.self, forKey: .social)
         color = try container.decodeIfPresent(ColorPolicy.self, forKey: .color)
         rights = try container.decodeIfPresent(RightsMetadata.self, forKey: .rights)
         sidecars = try container.decodeIfPresent(Sidecars.self, forKey: .sidecars)
@@ -160,6 +164,35 @@ struct FormatPlan: Codable, Equatable {
             let rightRank = ordering.firstIndex(of: right.element.format) ?? ordering.count
             return leftRank == rightRank ? left.offset < right.offset : leftRank < rightRank
         }.map(\.element)
+    }
+}
+
+/// An extra rendition cropped for link previews.
+///
+/// Not a ladder rung: a share image is one fixed shape, decided by the platforms that
+/// scrape it rather than by the page's layout, and it is cropped rather than fitted
+/// because a preview card has no room to letterbox.
+struct SocialImage: Codable, Equatable {
+    var width: Int
+    var height: Int
+    /// Appended to the stem so a share image can never take a ladder rung's name.
+    var nameMarker: String
+
+    init(width: Int = 1200, height: Int = 630, nameMarker: String = "-social") {
+        self.width = width
+        self.height = height
+        self.nameMarker = nameMarker
+    }
+
+    var isValid: Bool { width > 0 && height > 0 }
+
+    /// Lenient for the same reason `WebExport`'s is — see the note there.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = SocialImage()
+        width = try container.decodeIfPresent(Int.self, forKey: .width) ?? defaults.width
+        height = try container.decodeIfPresent(Int.self, forKey: .height) ?? defaults.height
+        nameMarker = try container.decodeIfPresent(String.self, forKey: .nameMarker) ?? defaults.nameMarker
     }
 }
 

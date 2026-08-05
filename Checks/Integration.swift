@@ -460,18 +460,29 @@ struct IntegrationChecks {
             // checks run on and only macOS 26 can write AVIF. It also exercises the
             // subprocess encoder, which is the path a matrix is most likely to break.
             formats: FormatPlan(alternatives: [FormatPlan.Entry(format: .webp)]),
+            social: SocialImage(),
             rights: RightsMetadata(titlePolicy: .fromFilename),
             sidecars: Sidecars(placeholder: .base64DataURI, pathPrefix: "/images")
         )
         let (sidecarJobs, sidecarOutputs, sidecarSkipped) = try JobPlanner.plan(sources: [sidecarRoot], settings: sidecarSettings)
-        precondition(sidecarJobs.count == 4, "expected two rungs in two formats, got \(sidecarJobs.count)")
+        precondition(
+            sidecarJobs.count == 5,
+            "expected two rungs in two formats plus a share image, got \(sidecarJobs.count)"
+        )
         // Names are resolved at plan time, and a format is part of what makes one unique —
-        // two rungs colliding into one name would show up here as a `-2` suffix.
+        // two rungs colliding into one name would show up here as a `-2` suffix. The share
+        // image carries a marker rather than a width for the same reason.
         precondition(
             Set(sidecarJobs.map(\.output.lastPathComponent)) == [
-                "cafe-sign-400.jpg", "cafe-sign-800.jpg", "cafe-sign-400.webp", "cafe-sign-800.webp"
+                "cafe-sign-400.jpg", "cafe-sign-800.jpg",
+                "cafe-sign-400.webp", "cafe-sign-800.webp",
+                "cafe-sign-social.jpg"
             ],
             "planned names: \(sidecarJobs.map(\.output.lastPathComponent))"
+        )
+        precondition(
+            sidecarJobs.filter { $0.role == .social }.count == 1,
+            "exactly one share image per source"
         )
         // Through the real batch loop, so the engine's own rendition recording — the
         // dimensions and byte counts the manifest is built from — is what gets checked.
@@ -481,7 +492,18 @@ struct IntegrationChecks {
             control: ProcessingControl()
         ) { _ in }
         precondition(batch.progress.failed == 0, "sidecar batch failed: \(batch.errors)")
-        precondition(batch.renditions.count == 4, "the batch recorded \(batch.renditions.count) renditions")
+        precondition(batch.renditions.count == 5, "the batch recorded \(batch.renditions.count) renditions")
+        // The role has to survive the engine, or the share image rejoins the ladder in
+        // every sidecar downstream.
+        guard let recordedShare = batch.renditions.first(where: { $0.role == .social }) else {
+            preconditionFailure("the engine did not record the share image as one")
+        }
+        // Fill crops to the requested shape, and preventEnlargement scales the whole thing
+        // down rather than upscaling a 1000px source to 1200 — the ratio is what matters.
+        precondition(
+            recordedShare.width == 1_000 && recordedShare.height == 525,
+            "share crop: \(recordedShare.width)×\(recordedShare.height)"
+        )
         precondition(batch.renditions.allSatisfy { $0.bytes > 0 }, "renditions must record real byte counts")
         precondition(batch.renditions.contains { $0.width == 400 }, "the 400 rung was recorded")
         let sidecarFiles = try SidecarWriter.write(
@@ -531,7 +553,21 @@ struct IntegrationChecks {
             snippet.contains("srcset=\"/images/cafe-sign-400.webp 400w, /images/cafe-sign-800.webp 800w\""),
             "the source carries its own ladder: \(snippet)"
         )
-        for name in ["cafe-sign-400.webp", "cafe-sign-800.webp", "cafe-sign-400.jpg", "cafe-sign-800.jpg"] {
+        precondition(
+            snippet.contains("<meta property=\"og:image\" content=\"/images/cafe-sign-social.jpg\">"),
+            "the snippet carries the link preview: \(snippet)"
+        )
+        precondition(snippet.contains("summary_large_image"), "the card is the large one")
+        // The whole reason the role exists: a crop must not be offered as a size.
+        precondition(
+            !snippet.contains("cafe-sign-social.jpg 1000w"),
+            "the share image reached a srcset: \(snippet)"
+        )
+        precondition(
+            (first["social"] as? [String: Any])?["path"] as? String == "/images/cafe-sign-social.jpg",
+            "the manifest records the share image separately"
+        )
+        for name in ["cafe-sign-400.webp", "cafe-sign-800.webp", "cafe-sign-400.jpg", "cafe-sign-800.jpg", "cafe-sign-social.jpg"] {
             let file = sidecarOutputs[0].appendingPathComponent(name)
             precondition(manager.fileExists(atPath: file.path), "\(name) was not written")
         }

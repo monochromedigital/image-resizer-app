@@ -348,7 +348,42 @@ struct ContentView: View {
             Text(outputCountText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            Divider()
+            Toggle("Also write a link preview image", isOn: binding(\.isSocialImageEnabled))
+            if model.store.isSocialImageEnabled {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("Preview size").frame(width: 108, alignment: .leading)
+                    TextField("1200", text: socialDimension(\.width))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 80)
+                    Image(systemName: "xmark").foregroundStyle(.secondary)
+                    TextField("630", text: socialDimension(\.height))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 80)
+                    Text("px").foregroundStyle(.secondary)
+                    Spacer()
+                }
+            }
+            Text("One extra JPEG per image, cropped to fill, for the card that appears when a link is shared. The markup carries og:image tags for the first image. It never joins the responsive sizes — it is a different crop, not a smaller one.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
+    }
+
+    /// Kept as text so a half-typed number does not momentarily become a valid size.
+    private func socialDimension(_ keyPath: WritableKeyPath<SocialImage, Int>) -> Binding<String> {
+        Binding(
+            get: {
+                let value = (model.store.webExport.social ?? SocialImage())[keyPath: keyPath]
+                return value > 0 ? String(value) : ""
+            },
+            set: {
+                var updated = model.store.webExport.social ?? SocialImage()
+                updated[keyPath: keyPath] = Int($0.filter(\.isNumber)) ?? 0
+                model.store.webExport.social = updated
+            }
+        )
     }
 
     /// Membership of the alternative-format list, kept in the order the markup needs
@@ -600,10 +635,13 @@ struct ContentView: View {
         let settings = model.store.settings
         let rungs = SizeLadder.expand(settings, sourceSize: nil).count
         let formats = FormatMatrix.count(for: settings)
-        let files = rungs * formats
+        let share = settings.webExport?.social?.isValid == true ? 1 : 0
+        let files = rungs * formats + share
         guard files > 1 else { return "One file per image." }
-        let multiplied = rungs > 1 && formats > 1 ? " (\(rungs) sizes × \(formats) formats)" : ""
-        return "Up to \(files) files per image\(multiplied). Sizes larger than a given original are skipped."
+        var breakdown = rungs > 1 && formats > 1 ? "\(rungs) sizes × \(formats) formats" : ""
+        if share > 0 { breakdown += breakdown.isEmpty ? "including the link preview" : ", plus the link preview" }
+        let detail = breakdown.isEmpty ? "" : " (\(breakdown))"
+        return "Up to \(files) files per image\(detail). Sizes larger than a given original are skipped."
     }
 
     private func naming<Value>(_ keyPath: WritableKeyPath<Naming, Value>) -> Binding<Value> {

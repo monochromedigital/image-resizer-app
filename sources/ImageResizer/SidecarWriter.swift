@@ -23,6 +23,9 @@ enum SidecarWriter {
         /// the fallback — the format every browser can read — and is what the `<img>`
         /// points at.
         let formats: [FormatGroup]
+        /// The link-preview crop, kept apart from `formats` so it can never reach a
+        /// `srcset` — it is a different picture, not a smaller one.
+        var socialImage: Rendition?
         var placeholder: String?
 
         /// Flat and width-ordered within each format, which is the order the manifest
@@ -75,6 +78,11 @@ enum SidecarWriter {
                    let json = structuredData(for: entries, settings: settings, sidecars: sidecars) {
                     blocks.insert(json, at: 0)
                 }
+                // Ahead of everything: a page carries one preview, and it belongs in the
+                // head beside the other tags describing the page as a whole.
+                if let first = entries.first, let tags = socialTags(for: first, sidecars: sidecars) {
+                    blocks.insert(tags, at: 0)
+                }
                 try Data(blocks.joined(separator: "\n\n").utf8).write(to: url, options: .atomic)
                 written.append(url)
             }
@@ -101,11 +109,13 @@ enum SidecarWriter {
         } ?? []
 
         return order.map { source in
-            let sorted = (bySource[source] ?? []).sorted { $0.width < $1.width }
+            let all = bySource[source] ?? []
+            let sorted = all.filter { $0.role == .responsive }.sorted { $0.width < $1.width }
             var entry = Entry(
                 source: source,
                 slug: OutputNaming.slug(source.deletingPathExtension().lastPathComponent),
-                formats: groupByFormat(sorted, preferred: preferred)
+                formats: groupByFormat(sorted, preferred: preferred),
+                socialImage: all.first { $0.role == .social }
             )
             // From the fallback, because the placeholder is decoded by this app and shown
             // by every browser — the format chosen for compatibility is the right source.
@@ -153,6 +163,14 @@ enum SidecarWriter {
                 }
             ]
             if let placeholder = entry.placeholder { image["placeholder"] = placeholder }
+            if let social = entry.socialImage {
+                image["social"] = [
+                    "path": path(for: social, sidecars: sidecars),
+                    "width": social.width,
+                    "height": social.height,
+                    "bytes": social.bytes
+                ] as [String: Any]
+            }
             return image
         }
         return try JSONSerialization.data(
@@ -251,6 +269,22 @@ enum SidecarWriter {
         if let suggestion = entry.renditions.compactMap(\.altText).first { return suggestion }
         guard let rights = settings.webExport?.rights else { return "" }
         return RightsWriter.resolve(rights.titlePolicy, source: entry.source, humanise: true) ?? ""
+    }
+
+    // MARK: - Link preview
+
+    /// The meta tags a scraper reads to build a preview card.
+    ///
+    /// A page has one preview, so these describe the first image of the run rather than
+    /// every image — the same reasoning that makes the hero the first image.
+    static func socialTags(for entry: Entry, sidecars: Sidecars) -> String? {
+        guard let social = entry.socialImage else { return nil }
+        return """
+            <meta property="og:image" content="\(escape(path(for: social, sidecars: sidecars)))">
+            <meta property="og:image:width" content="\(social.width)">
+            <meta property="og:image:height" content="\(social.height)">
+            <meta name="twitter:card" content="summary_large_image">
+            """
     }
 
     // MARK: - Structured data
