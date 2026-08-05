@@ -172,7 +172,7 @@ struct Sidecars: Codable, Equatable {
 /// text in a preset would stamp the same caption onto forty different pictures, which is
 /// worse for search than leaving them empty — so the preset carries only a policy.
 struct RightsMetadata: Codable, Equatable {
-    enum TextPolicy: String, Codable {
+    enum TextPolicy: String, Codable, CaseIterable {
         /// Leave whatever the source already carries.
         case keepExisting
         /// Derive from the filename, which is worth something once slugs are clean.

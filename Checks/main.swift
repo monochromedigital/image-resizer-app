@@ -525,4 +525,11 @@ check(
     "no suggestion leaves the field alone"
 )
 
+// Every policy the model can hold must be reachable, or a value set elsewhere renders
+// as a blank picker. This caught fromAltText being absent from the UI entirely.
+check(
+    Set(RightsMetadata.TextPolicy.allCases) == [.keepExisting, .fromFilename, .fromAltText, .empty],
+    "the policy cases are the four the UI offers"
+)
+
 print("All Image Resizer checks passed.")

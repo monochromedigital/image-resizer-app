@@ -350,12 +350,21 @@ struct ContentView: View {
                 Text("Leave empty").tag(RightsMetadata.TextPolicy.empty)
             }
             .frame(maxWidth: 320)
+            // A suggestion describes the picture, which is what a description is for.
+            // It is deliberately not offered for Title: a title names an image rather
+            // than describing it.
             Picker("Description", selection: rightsPolicy(\.descriptionPolicy)) {
                 Text("Keep existing").tag(RightsMetadata.TextPolicy.keepExisting)
                 Text("From filename").tag(RightsMetadata.TextPolicy.fromFilename)
+                Text("From suggested alt text").tag(RightsMetadata.TextPolicy.fromAltText)
                 Text("Leave empty").tag(RightsMetadata.TextPolicy.empty)
             }
             .frame(maxWidth: 320)
+            if model.store.webExport.rights?.descriptionPolicy == .fromAltText, !model.store.isAltTextEnabled {
+                Text("Turn on “Suggest alt text” below, or descriptions will be left as they are.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Text("Titles and descriptions differ per image, so only the rule is remembered — never the text.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
