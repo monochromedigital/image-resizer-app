@@ -200,7 +200,7 @@ enum SidecarWriter {
         return """
             <source type="\(type)"
                     srcset="\(escape(srcset(group.renditions, sidecars: sidecars)))"
-                    sizes="\(escape(sidecars.sizesAttribute))">
+                    sizes="\(escape(sidecars.resolvedSizes))">
             """
     }
 
@@ -224,7 +224,7 @@ enum SidecarWriter {
         var attributes = [
             "src=\"\(escape(path(for: fallback, sidecars: sidecars)))\"",
             "srcset=\"\(escape(srcset))\"",
-            "sizes=\"\(escape(sidecars.sizesAttribute))\"",
+            "sizes=\"\(escape(sidecars.resolvedSizes))\"",
             "width=\"\(fallback.width)\"",
             "height=\"\(fallback.height)\"",
             "alt=\"\(escape(altText(for: entry, settings: settings)))\""

@@ -175,12 +175,47 @@ struct Sidecars: Codable, Equatable {
         case base64DataURI
     }
 
+    /// How much of the page's width the image occupies.
+    ///
+    /// This is the half of a size ladder that decides whether it was worth building. A
+    /// browser picks a rendition before layout exists, so `sizes` is the only thing
+    /// telling it how wide the image will be — and `100vw` on a three-column grid asks
+    /// for the widest rung every time, which spends the ladder's savings and then some.
+    enum Layout: String, Codable, CaseIterable {
+        case fullWidth
+        case half
+        case thirds
+        case quarter
+        case fixedWidth
+        /// Whatever the user typed. Some layouts need a query no picker can express.
+        case custom
+
+        /// The width below which a multi-column layout has almost always collapsed to
+        /// one. A single breakpoint is a generalisation, but a wrong-by-a-little `sizes`
+        /// still picks a far better rendition than `100vw` does.
+        static let stackingBreakpoint = 700
+
+        func sizes(maxWidth: Int) -> String? {
+            switch self {
+            case .fullWidth: "100vw"
+            case .half: "(max-width: \(Self.stackingBreakpoint)px) 100vw, 50vw"
+            case .thirds: "(max-width: \(Self.stackingBreakpoint)px) 100vw, 33vw"
+            case .quarter: "(max-width: \(Self.stackingBreakpoint)px) 100vw, 25vw"
+            case .fixedWidth: maxWidth > 0 ? "(max-width: \(maxWidth)px) 100vw, \(maxWidth)px" : "100vw"
+            case .custom: nil
+            }
+        }
+    }
+
     var manifest: Bool
     var markupSnippet: Bool
     var placeholder: PlaceholderMode
     var placeholderWidth: Int
-    /// Emitted verbatim into the `sizes` attribute; the browser needs it to pick a
-    /// rendition before layout.
+    var layout: Layout
+    /// The column width `fixedWidth` describes, in CSS pixels.
+    var layoutMaxWidth: Int
+    /// The `sizes` value for `custom`. Retained under every layout so switching away and
+    /// back does not lose what was typed.
     var sizesAttribute: String
     /// Prepended to every path in the manifest and markup, so the output describes where
     /// the files will live rather than where they were written.
@@ -199,6 +234,8 @@ struct Sidecars: Codable, Equatable {
         markupSnippet: Bool = true,
         placeholder: PlaceholderMode = .none,
         placeholderWidth: Int = 20,
+        layout: Layout = .fullWidth,
+        layoutMaxWidth: Int = 800,
         sizesAttribute: String = "100vw",
         pathPrefix: String = "",
         structuredData: Bool = true,
@@ -209,12 +246,19 @@ struct Sidecars: Codable, Equatable {
         self.markupSnippet = markupSnippet
         self.placeholder = placeholder
         self.placeholderWidth = placeholderWidth
+        self.layout = layout
+        self.layoutMaxWidth = layoutMaxWidth
         self.sizesAttribute = sizesAttribute
         self.pathPrefix = pathPrefix
         self.prioritiseFirstImage = prioritiseFirstImage
     }
 
     var writesAnything: Bool { manifest || markupSnippet }
+
+    /// What the markup actually emits.
+    var resolvedSizes: String {
+        layout.sizes(maxWidth: layoutMaxWidth) ?? sizesAttribute
+    }
 
     /// Lenient for the same reason `WebExport`'s is — see the note there.
     init(from decoder: Decoder) throws {
@@ -225,6 +269,12 @@ struct Sidecars: Codable, Equatable {
         placeholder = try container.decodeIfPresent(PlaceholderMode.self, forKey: .placeholder) ?? defaults.placeholder
         placeholderWidth = try container.decodeIfPresent(Int.self, forKey: .placeholderWidth) ?? defaults.placeholderWidth
         sizesAttribute = try container.decodeIfPresent(String.self, forKey: .sizesAttribute) ?? defaults.sizesAttribute
+        layoutMaxWidth = try container.decodeIfPresent(Int.self, forKey: .layoutMaxWidth) ?? defaults.layoutMaxWidth
+        // A blob written before layouts existed carries only the typed attribute. Anything
+        // other than the old default was deliberate, so it becomes a custom layout rather
+        // than being silently overwritten by a generated value.
+        layout = try container.decodeIfPresent(Layout.self, forKey: .layout)
+            ?? (sizesAttribute == defaults.sizesAttribute ? .fullWidth : .custom)
         pathPrefix = try container.decodeIfPresent(String.self, forKey: .pathPrefix) ?? defaults.pathPrefix
         structuredData = try container.decodeIfPresent(Bool.self, forKey: .structuredData) ?? defaults.structuredData
         prioritiseFirstImage = try container.decodeIfPresent(Bool.self, forKey: .prioritiseFirstImage)
