@@ -101,7 +101,24 @@ final class ResizeViewModel: ObservableObject {
                 var batch = await ResizeEngine.process(jobs: jobs, skipped: skipped, control: control) { update in
                     Task { @MainActor in self.progress = update }
                 }
-                batch = BatchResult(progress: batch.progress, outputDirectories: outputDirectories, errors: batch.errors)
+                batch = BatchResult(
+                    progress: batch.progress,
+                    outputDirectories: outputDirectories,
+                    errors: batch.errors,
+                    renditions: batch.renditions
+                )
+                // Off the main actor: writing a placeholder decodes a thumbnail per
+                // source, which is cheap individually and not free across a large batch.
+                let written = batch.renditions
+                let directories = outputDirectories
+                let batchSettings = settings
+                await Task.detached(priority: .utility) {
+                    try? SidecarWriter.write(
+                        renditions: written,
+                        outputDirectories: directories,
+                        settings: batchSettings
+                    )
+                }.value
                 self.progress = batch.progress
                 self.result = batch
                 self.sources.removeAll()

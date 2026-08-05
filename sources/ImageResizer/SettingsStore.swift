@@ -127,6 +127,15 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    var areSidecarsEnabled: Bool {
+        get { webExport.sidecars != nil }
+        set {
+            var updated = webExport
+            updated.sidecars = newValue ? (updated.sidecars ?? Sidecars()) : nil
+            webExport = updated
+        }
+    }
+
     var isLadderEnabled: Bool {
         get { webExport.ladder != nil }
         set {

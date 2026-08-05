@@ -443,4 +443,62 @@ check(RightsWriter.metadata(rights: RightsMetadata(creator: "Someone")) == nil, 
 check(RightsWriter.metadata(rights: RightsMetadata(webStatementURL: "https://example.test")) != nil, "a web statement needs XMP")
 check(RightsWriter.xmpPacket(rights: RightsMetadata(licensorURL: "https://example.test")) != nil, "a licensor produces an XMP packet")
 
+// Sidecar paths and markup are string assembly, so they are pinned here rather than only
+// end to end.
+private func rendition(_ name: String, _ width: Int, _ height: Int, _ bytes: Int = 100) -> Rendition {
+    Rendition(
+        source: URL(fileURLWithPath: "/Photos/IMG_4821 Café Sign.jpg"),
+        output: URL(fileURLWithPath: "/Out/\(name)"),
+        width: width, height: height, bytes: bytes
+    )
+}
+check(
+    SidecarWriter.path(for: rendition("a-400.jpg", 400, 225), sidecars: Sidecars()) == "a-400.jpg",
+    "no prefix leaves a bare filename"
+)
+check(
+    SidecarWriter.path(for: rendition("a-400.jpg", 400, 225), sidecars: Sidecars(pathPrefix: "/images")) == "/images/a-400.jpg",
+    "a prefix without a trailing slash still joins cleanly"
+)
+check(
+    SidecarWriter.path(for: rendition("a-400.jpg", 400, 225), sidecars: Sidecars(pathPrefix: "/images/")) == "/images/a-400.jpg",
+    "a prefix with a trailing slash does not double it"
+)
+check(SidecarWriter.escape("a&b<c>\"d\"") == "a&amp;b&lt;c&gt;&quot;d&quot;", "attribute escaping")
+
+var sidecarSettings = settings(mode: .fit, width: 800)
+sidecarSettings.webExport = WebExport(
+    isEnabled: true,
+    rights: RightsMetadata(titlePolicy: .fromFilename),
+    sidecars: Sidecars(pathPrefix: "/images")
+)
+let entries = SidecarWriter.group(
+    [rendition("cafe-sign-800.jpg", 800, 450), rendition("cafe-sign-400.jpg", 400, 225)],
+    settings: sidecarSettings,
+    sidecars: sidecarSettings.webExport!.sidecars!
+)
+check(entries.count == 1, "renditions group by source")
+// Sorted ascending, so srcset reads small to large and the fallback is the largest.
+check(entries[0].renditions.map(\.width) == [400, 800], "renditions sort by width")
+check(entries[0].fallback?.width == 800, "the largest rendition is the fallback")
+check(entries[0].slug == "cafe-sign", "entry slug comes from the source")
+
+let markup = SidecarWriter.markup(
+    for: entries[0], settings: sidecarSettings, sidecars: sidecarSettings.webExport!.sidecars!
+)
+check(markup.contains("srcset=\"/images/cafe-sign-400.jpg 400w, /images/cafe-sign-800.jpg 800w\""), "srcset: \(markup)")
+check(markup.contains("src=\"/images/cafe-sign-800.jpg\""), "src falls back to the largest")
+check(markup.contains("width=\"800\"") && markup.contains("height=\"450\""), "intrinsic size prevents layout shift")
+check(markup.contains("alt=\"Cafe Sign\""), "alt comes from the title policy: \(markup)")
+check(markup.contains("loading=\"lazy\""), "lazy loading")
+
+// Without a title policy there is nothing to say, and an empty alt is a valid
+// declaration that an image is decorative — a guess would be worse.
+var noRights = sidecarSettings
+noRights.webExport?.rights = nil
+check(
+    SidecarWriter.markup(for: entries[0], settings: noRights, sidecars: Sidecars()).contains("alt=\"\""),
+    "no title policy yields an empty alt"
+)
+
 print("All Image Resizer checks passed.")
