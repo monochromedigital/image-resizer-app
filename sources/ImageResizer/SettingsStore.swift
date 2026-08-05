@@ -156,6 +156,10 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    var markupFileExtension: String {
+        (webExport.sidecars ?? Sidecars()).markupFlavour.fileExtension
+    }
+
     var isSocialImageEnabled: Bool {
         get { webExport.social != nil }
         set {

@@ -571,6 +571,25 @@ struct IntegrationChecks {
             let file = sidecarOutputs[0].appendingPathComponent(name)
             precondition(manager.fileExists(atPath: file.path), "\(name) was not written")
         }
+        // The same renditions written as JSX. Cheap — the sidecars are string assembly, so
+        // this needs no re-encoding — and it proves the flavour reaches the filename.
+        var jsxSettings = sidecarSettings
+        jsxSettings.webExport?.sidecars?.markupFlavour = .jsx
+        let jsxFiles = try SidecarWriter.write(
+            renditions: batch.renditions,
+            outputDirectories: sidecarOutputs,
+            settings: jsxSettings
+        )
+        precondition(
+            jsxFiles.contains { $0.lastPathComponent == "snippet.jsx" },
+            "expected a snippet.jsx, got \(jsxFiles.map(\.lastPathComponent))"
+        )
+        let jsxSnippet = try String(
+            contentsOf: sidecarOutputs[0].appendingPathComponent("snippet.jsx"), encoding: .utf8
+        )
+        precondition(jsxSnippet.contains("srcSet="), "the written JSX camel-cases srcset")
+        precondition(!jsxSnippet.contains("srcset="), "and drops the HTML spelling: \(jsxSnippet)")
+        precondition(jsxSnippet.contains("dangerouslySetInnerHTML"), "structured data is set as HTML")
         print("Sidecar checks passed.")
 
 

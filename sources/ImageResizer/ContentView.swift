@@ -486,6 +486,11 @@ struct ContentView: View {
             Toggle("Write a manifest and ready-to-paste markup", isOn: binding(\.areSidecarsEnabled))
             if model.store.areSidecarsEnabled {
                 rightsField("Path prefix", placeholder: "/images", value: sidecar(\.pathPrefix))
+                Picker("Markup", selection: sidecar(\.markupFlavour)) {
+                    Text("HTML").tag(Sidecars.Markup.html)
+                    Text("JSX / React").tag(Sidecars.Markup.jsx)
+                }
+                .frame(maxWidth: 320)
                 Picker("Image width", selection: sidecar(\.layout)) {
                     Text("Full page width").tag(Sidecars.Layout.fullWidth)
                     Text("Half the page").tag(Sidecars.Layout.half)
@@ -526,7 +531,7 @@ struct ContentView: View {
                 Text("The largest image on screen should not wait its turn. The first image of the batch is marked to load immediately; the rest load lazily. Drop your hero image first, or turn this off if none of them is one.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("manifest.json and snippet.html are written beside the images. Paths use the prefix, so they describe where the files will live rather than where they were written.")
+                Text("manifest.json and snippet.\(model.store.markupFileExtension) are written beside the images. Paths use the prefix, so they describe where the files will live rather than where they were written.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

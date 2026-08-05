@@ -797,6 +797,63 @@ check(
     "structured data ignores the share image"
 )
 
+// JSX. The point of the dialect is that React drops the attributes this whole export
+// exists to produce, so these assertions are about names rather than looks.
+let jsxSidecars = Sidecars(markupFlavour: .jsx, pathPrefix: "/images")
+let jsx = SidecarWriter.markup(
+    for: pictureEntries[0], settings: pictureSettings, sidecars: jsxSidecars, isHero: true
+)
+check(jsx.contains("srcSet=\""), "srcset is camel-cased or React ignores it: \(jsx)")
+check(!jsx.contains("srcset=\""), "and the HTML spelling is gone")
+check(jsx.contains("fetchPriority=\"high\""), "fetchpriority is camel-cased")
+check(!jsx.contains("fetchpriority="), "and the HTML spelling is gone")
+// Attributes React spells the same way must not be mangled on the way through.
+check(jsx.contains("sizes=\""), "sizes is unchanged")
+check(jsx.contains("loading=\"eager\"") && jsx.contains("decoding=\"async\""), "loading and decoding are unchanged")
+// Void elements are a syntax error in JSX unless they close themselves.
+check(jsx.contains("/>"), "elements self-close")
+check(!jsx.contains("\">\n"), "no HTML-style open tag survives: \(jsx)")
+check(jsx.contains("<picture>") && jsx.contains("</picture>"), "the wrapper is the same in both")
+
+// A style attribute is a string in HTML and an object in JSX — the one value whose shape
+// differs rather than its name.
+var placeholderEntry = pictureEntries[0]
+placeholderEntry.placeholder = "data:image/jpeg;base64,AAAA"
+check(
+    SidecarWriter.markup(for: placeholderEntry, settings: pictureSettings, sidecars: jsxSidecars)
+        .contains("style={{ backgroundImage: 'url(data:image/jpeg;base64,AAAA)', backgroundSize: 'cover' }}"),
+    "the placeholder becomes a style object"
+)
+check(
+    SidecarWriter.markup(for: placeholderEntry, settings: pictureSettings, sidecars: sidecarDefaults)
+        .contains("style=\"background-image:url(data:image/jpeg;base64,AAAA);background-size:cover\""),
+    "and stays a string in HTML"
+)
+
+// React will not render a child of <script>, so the JSON has to arrive as HTML. It is
+// emitted as a JavaScript expression rather than a quoted string, which is what stops a
+// quote or a backslash in a rights field from breaking the file.
+guard let jsxBlock = SidecarWriter.structuredData(
+    for: pictureEntries, settings: licensedSettings, sidecars: jsxSidecars
+) else {
+    FileHandle.standardError.write(Data("FAILED: no JSX structured data\n".utf8))
+    exit(1)
+}
+check(jsxBlock.contains("dangerouslySetInnerHTML"), "the block is set as HTML: \(jsxBlock)")
+check(jsxBlock.contains("JSON.stringify("), "and stringified from a literal rather than quoted")
+check(jsxBlock.hasSuffix("/>"), "the script tag self-closes")
+
+// Meta tags go through the same renderer, so they self-close too.
+if let jsxTags = SidecarWriter.socialTags(for: shareEntries[0], sidecars: jsxSidecars) {
+    check(jsxTags.contains("<meta property=\"og:image\" content=\"/images/cafe-sign-social.jpg\" />"), "meta tags self-close: \(jsxTags)")
+} else {
+    FileHandle.standardError.write(Data("FAILED: no JSX meta tags\n".utf8))
+    exit(1)
+}
+
+check(Sidecars(markupFlavour: .jsx).markupFlavour.fileExtension == "jsx", "the snippet takes the dialect's extension")
+check(Sidecars().markupFlavour == .html, "HTML stays the default")
+
 // One format is not a choice, so the wrapper is not earned.
 check(
     SidecarWriter.markup(for: entries[0], settings: sidecarSettings, sidecars: sidecarDefaults)

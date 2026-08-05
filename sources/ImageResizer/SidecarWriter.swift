@@ -63,7 +63,9 @@ enum SidecarWriter {
                 written.append(url)
             }
             if sidecars.markupSnippet {
-                let url = directory.appendingPathComponent("snippet.html")
+                let url = directory
+                    .appendingPathComponent("snippet")
+                    .appendingPathExtension(sidecars.markupFlavour.fileExtension)
                 var blocks = entries.enumerated().map { index, entry in
                     self.markup(
                         for: entry,
@@ -208,6 +210,21 @@ enum SidecarWriter {
         return "<picture>\n  " + blocks.joined(separator: "\n  ") + "\n</picture>"
     }
 
+    /// One attribute, spelled the way the chosen dialect spells it.
+    ///
+    /// React drops `srcset` and `fetchpriority` silently, so this mapping is the
+    /// difference between a working snippet and one that looks right and does nothing.
+    static func attribute(_ name: String, _ value: String, flavour: Sidecars.Markup) -> String {
+        let jsxNames = ["srcset": "srcSet", "fetchpriority": "fetchPriority", "class": "className"]
+        let key = flavour == .jsx ? (jsxNames[name] ?? name) : name
+        return "\(key)=\"\(escape(value))\""
+    }
+
+    /// Elements that cannot have children close differently in the two dialects.
+    static func close(_ flavour: Sidecars.Markup) -> String {
+        flavour == .jsx ? " />" : ">"
+    }
+
     /// One `<source>`: a whole format's ladder, offered ahead of the fallback.
     ///
     /// `nil` when the format has no media type to advertise, since a `<source>` without
@@ -215,11 +232,13 @@ enum SidecarWriter {
     static func sourceElement(for group: Entry.FormatGroup, sidecars: Sidecars) -> String? {
         guard let type = OutputType.mimeType(forExtension: group.fileExtension),
               !group.renditions.isEmpty else { return nil }
-        return """
-            <source type="\(type)"
-                    srcset="\(escape(srcset(group.renditions, sidecars: sidecars)))"
-                    sizes="\(escape(sidecars.resolvedSizes))">
-            """
+        let flavour = sidecars.markupFlavour
+        let attributes = [
+            attribute("type", type, flavour: flavour),
+            attribute("srcset", srcset(group.renditions, sidecars: sidecars), flavour: flavour),
+            attribute("sizes", sidecars.resolvedSizes, flavour: flavour)
+        ]
+        return "<source " + attributes.joined(separator: "\n        ") + close(flavour)
     }
 
     static func srcset(_ renditions: [Rendition], sidecars: Sidecars) -> String {
@@ -237,26 +256,30 @@ enum SidecarWriter {
         isHero: Bool
     ) -> String {
         guard let group = entry.formats.last, let fallback = group.renditions.last else { return "" }
-        let srcset = srcset(group.renditions, sidecars: sidecars)
+        let flavour = sidecars.markupFlavour
 
         var attributes = [
-            "src=\"\(escape(path(for: fallback, sidecars: sidecars)))\"",
-            "srcset=\"\(escape(srcset))\"",
-            "sizes=\"\(escape(sidecars.resolvedSizes))\"",
-            "width=\"\(fallback.width)\"",
-            "height=\"\(fallback.height)\"",
-            "alt=\"\(escape(altText(for: entry, settings: settings)))\""
+            attribute("src", path(for: fallback, sidecars: sidecars), flavour: flavour),
+            attribute("srcset", srcset(group.renditions, sidecars: sidecars), flavour: flavour),
+            attribute("sizes", sidecars.resolvedSizes, flavour: flavour),
+            attribute("width", String(fallback.width), flavour: flavour),
+            attribute("height", String(fallback.height), flavour: flavour),
+            attribute("alt", altText(for: entry, settings: settings), flavour: flavour)
         ]
         // Deferring the image a page paints largest delays the paint it is measured on,
         // so the hero asks to be fetched early and everything below the fold waits.
         attributes += isHero
-            ? ["fetchpriority=\"high\"", "loading=\"eager\""]
-            : ["loading=\"lazy\""]
-        attributes.append("decoding=\"async\"")
+            ? [attribute("fetchpriority", "high", flavour: flavour), attribute("loading", "eager", flavour: flavour)]
+            : [attribute("loading", "lazy", flavour: flavour)]
+        attributes.append(attribute("decoding", "async", flavour: flavour))
         if let placeholder = entry.placeholder {
-            attributes.append("style=\"background-image:url(\(placeholder));background-size:cover\"")
+            // A style attribute is a string in HTML and an object in JSX — the one place
+            // the two dialects disagree about the shape of a value rather than its name.
+            attributes.append(flavour == .jsx
+                ? "style={{ backgroundImage: 'url(\(placeholder))', backgroundSize: 'cover' }}"
+                : "style=\"background-image:url(\(placeholder));background-size:cover\"")
         }
-        return "<img \(attributes.joined(separator: "\n     "))>"
+        return "<img " + attributes.joined(separator: "\n     ") + close(flavour)
     }
 
     /// Alt text is required for the markup to be worth pasting, but the app cannot invent
@@ -279,12 +302,17 @@ enum SidecarWriter {
     /// every image — the same reasoning that makes the hero the first image.
     static func socialTags(for entry: Entry, sidecars: Sidecars) -> String? {
         guard let social = entry.socialImage else { return nil }
-        return """
-            <meta property="og:image" content="\(escape(path(for: social, sidecars: sidecars)))">
-            <meta property="og:image:width" content="\(social.width)">
-            <meta property="og:image:height" content="\(social.height)">
-            <meta name="twitter:card" content="summary_large_image">
-            """
+        let flavour = sidecars.markupFlavour
+        let tags = [
+            ("property", "og:image", path(for: social, sidecars: sidecars)),
+            ("property", "og:image:width", String(social.width)),
+            ("property", "og:image:height", String(social.height)),
+            ("name", "twitter:card", "summary_large_image")
+        ]
+        return tags.map { key, name, value in
+            "<meta \(attribute(key, name, flavour: flavour)) "
+                + attribute("content", value, flavour: flavour) + close(flavour)
+        }.joined(separator: "\n")
     }
 
     // MARK: - Structured data
@@ -308,7 +336,23 @@ enum SidecarWriter {
             withJSONObject: payload,
             options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         ), let json = String(data: data, encoding: .utf8) else { return nil }
-        return "<script type=\"application/ld+json\">\n\(json)\n</script>"
+
+        guard sidecars.markupFlavour == .jsx else {
+            return "<script type=\"application/ld+json\">\n\(json)\n</script>"
+        }
+        // React will not render a child of <script>, so the JSON has to arrive as HTML.
+        // It goes through `JSON.stringify` of the literal rather than a quoted string
+        // because JSON is already a valid JavaScript expression — which sidesteps escaping
+        // a quote, a backslash or a backtick that a rights field could legitimately hold.
+        let indented = "    " + json.replacingOccurrences(of: "\n", with: "\n    ")
+        return """
+            <script
+              type="application/ld+json"
+              dangerouslySetInnerHTML={{ __html: JSON.stringify(
+            \(indented)
+              ) }}
+            />
+            """
     }
 
     /// One `ImageObject`, or `nil` when the only things known about the image are its URL
