@@ -499,6 +499,10 @@ struct IntegrationChecks {
         // Proves the writer threads the hero through, not just that the markup can express
         // it: the first image of a run is the one written with priority.
         precondition(snippet.contains("fetchpriority=\"high\""), "the written snippet prioritises the first image")
+        // The structured-data block is opt-in on rights having something to say, and this
+        // batch's rights are a title policy alone.
+        precondition(snippet.contains("application/ld+json"), "the written snippet carries structured data")
+        precondition(snippet.contains("\"@type\" : \"ImageObject\""), "structured data types the image: \(snippet)")
         print("Sidecar checks passed.")
 
 

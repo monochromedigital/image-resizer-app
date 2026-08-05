@@ -510,6 +510,54 @@ check(heroMarkup.contains("fetchpriority=\"high\""), "the hero asks to be fetche
 check(heroMarkup.contains("loading=\"eager\""), "the hero is not deferred")
 check(!heroMarkup.contains("loading=\"lazy\""), "the hero is never lazy")
 
+// Structured data. The fields are the ones a search engine reads for a licensable image,
+// and they are parsed back rather than string-matched so a malformed block fails here.
+var licensedSettings = sidecarSettings
+licensedSettings.webExport?.rights = RightsMetadata(
+    creator: "Monochrome Digital",
+    creatorType: .organization,
+    copyrightNotice: "© 2026 Monochrome Digital",
+    credit: "Photo: Monochrome Digital",
+    webStatementURL: "https://example.test/licence",
+    licensorURL: "https://example.test/buy",
+    titlePolicy: .fromFilename
+)
+let sidecarDefaults = Sidecars(pathPrefix: "/images")
+guard let block = SidecarWriter.structuredData(
+    for: entries, settings: licensedSettings, sidecars: sidecarDefaults
+) else {
+    FileHandle.standardError.write(Data("FAILED: rights produced no structured data\n".utf8))
+    exit(1)
+}
+check(block.hasPrefix("<script type=\"application/ld+json\">"), "structured data is a script block")
+guard let openBrace = block.firstIndex(of: "{"), let closeBrace = block.lastIndex(of: "}"),
+      let parsed = try? JSONSerialization.jsonObject(
+          with: Data(block[openBrace...closeBrace].utf8)
+      ) as? [String: Any] else {
+    FileHandle.standardError.write(Data("FAILED: structured data is not valid JSON\n".utf8))
+    exit(1)
+}
+check((parsed["@type"] as? String) == "ImageObject", "structured data types the image")
+check((parsed["contentUrl"] as? String) == "/images/cafe-sign-800.jpg", "contentUrl is the largest rendition")
+check((parsed["width"] as? Int) == 800 && (parsed["height"] as? Int) == 450, "structured data carries dimensions")
+check((parsed["license"] as? String) == "https://example.test/licence", "the licence page is the licence")
+check((parsed["acquireLicensePage"] as? String) == "https://example.test/buy", "the licensing page is where to buy")
+check((parsed["copyrightNotice"] as? String) == "© 2026 Monochrome Digital", "copyright carries over")
+check((parsed["creditText"] as? String) == "Photo: Monochrome Digital", "credit carries over")
+check((parsed["name"] as? String) == "Cafe Sign", "the title policy names the image")
+// Alt text falls back to the title, and saying the same words twice under two keys
+// describes nothing extra.
+check(parsed["caption"] == nil, "a caption identical to the name is not repeated")
+// A name alone cannot say whether a creator is a person or a company, so the choice is
+// carried rather than guessed.
+check(
+    ((parsed["creator"] as? [String: Any])?["@type"] as? String) == "Organization",
+    "the creator type is the one that was chosen"
+)
+check(
+    ((parsed["creator"] as? [String: Any])?["name"] as? String) == "Monochrome Digital",
+    "the creator is named"
+)
 // Without a title policy there is nothing to say, and an empty alt is a valid
 // declaration that an image is decorative — a guess would be worse.
 var noRights = sidecarSettings
@@ -517,6 +565,12 @@ noRights.webExport?.rights = nil
 check(
     SidecarWriter.markup(for: entries[0], settings: noRights, sidecars: Sidecars()).contains("alt=\"\""),
     "no title policy yields an empty alt"
+)
+// The same absence in structured data: an ImageObject carrying only a URL and a size
+// says nothing the markup did not, so none is emitted rather than an empty one.
+check(
+    SidecarWriter.structuredData(for: entries, settings: noRights, sidecars: sidecarDefaults) == nil,
+    "no rights and no alt text yields no structured data"
 )
 
 // Alt text. The model-facing parts need a model, but the tidying that guards against its

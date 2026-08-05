@@ -336,6 +336,13 @@ struct ContentView: View {
             Text("Rights")
                 .font(.subheadline.weight(.medium))
             rightsField("Creator", placeholder: "Your name or studio", value: rights(\.creator))
+            if model.store.webExport.rights?.creator?.isEmpty == false {
+                Picker("Creator is", selection: rightsValue(\.creatorType)) {
+                    Text("A person").tag(RightsMetadata.CreatorType.person)
+                    Text("An organisation").tag(RightsMetadata.CreatorType.organization)
+                }
+                .frame(maxWidth: 320)
+            }
             rightsField("Copyright", placeholder: "© 2026 Your Name", value: rights(\.copyrightNotice))
             rightsField("Credit", placeholder: "Photo: Your Name", value: rights(\.credit))
             rightsField("Licence page", placeholder: "https://example.com/licence", value: rights(\.webStatementURL))
@@ -344,7 +351,7 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Picker("Title", selection: rightsPolicy(\.titlePolicy)) {
+            Picker("Title", selection: rightsValue(\.titlePolicy)) {
                 Text("Keep existing").tag(RightsMetadata.TextPolicy.keepExisting)
                 Text("From filename").tag(RightsMetadata.TextPolicy.fromFilename)
                 Text("Leave empty").tag(RightsMetadata.TextPolicy.empty)
@@ -353,7 +360,7 @@ struct ContentView: View {
             // A suggestion describes the picture, which is what a description is for.
             // It is deliberately not offered for Title: a title names an image rather
             // than describing it.
-            Picker("Description", selection: rightsPolicy(\.descriptionPolicy)) {
+            Picker("Description", selection: rightsValue(\.descriptionPolicy)) {
                 Text("Keep existing").tag(RightsMetadata.TextPolicy.keepExisting)
                 Text("From filename").tag(RightsMetadata.TextPolicy.fromFilename)
                 Text("From suggested alt text").tag(RightsMetadata.TextPolicy.fromAltText)
@@ -412,6 +419,10 @@ struct ContentView: View {
                     Text("Inline blur-up").tag(Sidecars.PlaceholderMode.base64DataURI)
                 }
                 .frame(maxWidth: 320)
+                Toggle("Describe the images for search engines", isOn: sidecar(\.structuredData))
+                Text("Adds a schema.org block to the markup carrying the credit and licence details above. Search engines read it from the page, which survives uploads that strip a file's own metadata.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("Load the first image first", isOn: sidecar(\.prioritiseFirstImage))
                 Text("The largest image on screen should not wait its turn. The first image of the batch is marked to load immediately; the rest load lazily. Drop your hero image first, or turn this off if none of them is one.")
                     .font(.caption)
@@ -457,9 +468,9 @@ struct ContentView: View {
         )
     }
 
-    private func rightsPolicy(
-        _ keyPath: WritableKeyPath<RightsMetadata, RightsMetadata.TextPolicy>
-    ) -> Binding<RightsMetadata.TextPolicy> {
+    private func rightsValue<Value>(
+        _ keyPath: WritableKeyPath<RightsMetadata, Value>
+    ) -> Binding<Value> {
         Binding(
             get: { (model.store.webExport.rights ?? RightsMetadata())[keyPath: keyPath] },
             set: {

@@ -48,7 +48,7 @@ enum SidecarWriter {
             }
             if sidecars.markupSnippet {
                 let url = directory.appendingPathComponent("snippet.html")
-                let markup = entries.enumerated().map { index, entry in
+                var blocks = entries.enumerated().map { index, entry in
                     self.markup(
                         for: entry,
                         settings: settings,
@@ -56,7 +56,13 @@ enum SidecarWriter {
                         isHero: sidecars.prioritiseFirstImage && index == 0
                     )
                 }
-                try Data(markup.joined(separator: "\n\n").utf8).write(to: url, options: .atomic)
+                // Ahead of the markup, because it describes the whole set rather than any
+                // one image, and because that is where a page carries it.
+                if sidecars.structuredData,
+                   let json = structuredData(for: entries, settings: settings, sidecars: sidecars) {
+                    blocks.insert(json, at: 0)
+                }
+                try Data(blocks.joined(separator: "\n\n").utf8).write(to: url, options: .atomic)
                 written.append(url)
             }
         }
@@ -165,6 +171,72 @@ enum SidecarWriter {
         if let suggestion = entry.renditions.compactMap(\.altText).first { return suggestion }
         guard let rights = settings.webExport?.rights else { return "" }
         return RightsWriter.resolve(rights.titlePolicy, source: entry.source, humanise: true) ?? ""
+    }
+
+    // MARK: - Structured data
+
+    /// A `<script type="application/ld+json">` block describing the exported images.
+    ///
+    /// The same facts already go into IPTC and XMP, and both carriers are read — but a
+    /// file's own metadata does not survive every CMS that re-encodes on upload, whereas
+    /// markup pasted into a page does. Returns `nil` when no image had anything to say.
+    static func structuredData(
+        for entries: [Entry],
+        settings: ResizeSettings,
+        sidecars: Sidecars
+    ) -> String? {
+        let objects = entries.compactMap { imageObject(for: $0, settings: settings, sidecars: sidecars) }
+        guard !objects.isEmpty else { return nil }
+        // A single image is emitted as one object rather than a one-element array. Both
+        // are valid; the object is what every example of this markup looks like.
+        let payload: Any = objects.count == 1 ? objects[0] : objects
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: payload,
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        ), let json = String(data: data, encoding: .utf8) else { return nil }
+        return "<script type=\"application/ld+json\">\n\(json)\n</script>"
+    }
+
+    /// One `ImageObject`, or `nil` when the only things known about the image are its URL
+    /// and its size — a block saying that describes nothing the page did not already say.
+    static func imageObject(
+        for entry: Entry,
+        settings: ResizeSettings,
+        sidecars: Sidecars
+    ) -> [String: Any]? {
+        guard let fallback = entry.fallback else { return nil }
+        var object: [String: Any] = [
+            "@context": "https://schema.org",
+            "@type": "ImageObject",
+            "contentUrl": path(for: fallback, sidecars: sidecars),
+            "width": fallback.width,
+            "height": fallback.height
+        ]
+
+        var describes = false
+        func assign(_ key: String, _ value: String?) {
+            guard let value, !value.isEmpty else { return }
+            object[key] = value
+            describes = true
+        }
+
+        let rights = settings.webExport?.rights
+        let name = rights.flatMap { RightsWriter.resolve($0.titlePolicy, source: entry.source, humanise: true) }
+        assign("name", name)
+        // Alt text falls back to the title when there is no suggestion, and a caption
+        // repeating the name describes nothing — so it is only worth saying once.
+        let caption = altText(for: entry, settings: settings)
+        assign("caption", caption == name ? nil : caption)
+        assign("creditText", rights?.credit)
+        assign("copyrightNotice", rights?.copyrightNotice)
+        // The two Google reads for a licensable image: the terms, and where to buy.
+        assign("license", rights?.webStatementURL)
+        assign("acquireLicensePage", rights?.licensorURL)
+        if let rights, let creator = rights.creator, !creator.isEmpty {
+            object["creator"] = ["@type": rights.creatorType.schemaType, "name": creator]
+            describes = true
+        }
+        return describes ? object : nil
     }
 
     static func path(for rendition: Rendition, sidecars: Sidecars) -> String {
