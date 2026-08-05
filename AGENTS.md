@@ -102,9 +102,15 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
 - **One job → one output file.** `ResizeEngine.resize` returns a single `URL`, and
   `progress.completed += 1` counts jobs. Anything that fans one source out to several
   outputs fans out in `JobPlanner`, producing more `ResizeJob`s — that is how the size
-  ladder and the format matrix both work, and it is why the engine needed no changes for
-  either. They compose: formats outermost, rungs within, so one source's files stay
-  contiguous and in the order the markup offers them.
+  ladder, the format matrix and the share image all work, and it is why the engine needed
+  no changes for any of them. They compose: formats outermost, rungs within, then one
+  share image per source, so a source's files stay contiguous and in the order the markup
+  offers them.
+- **A `Rendition` carries a `RenditionRole`.** `.social` marks the link-preview crop,
+  which is a *different picture* rather than a smaller one — it must never reach a
+  `srcset`, and `SidecarWriter` splits it out before grouping by format. Anything that
+  adds a rendition that is not one size of the same image needs a role, not a filter on
+  its name.
 - **Filenames are resolved at plan time, not during encoding.** `JobPlanner` fills in
   `ResizeJob.output` completely: extension, naming template, and collision suffix.
   `NameReservations` checks both the batch's own reservations and the disk, so two
