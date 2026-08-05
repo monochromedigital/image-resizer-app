@@ -5,6 +5,7 @@ ROOT="${0:A:h:h}"
 PLIST="$ROOT/Resources/Info.plist"
 APP="$ROOT/dist/Image Resizer.app"
 DMG="$ROOT/dist/Image Resizer.dmg"
+SITE_REPO="${SITE_REPO:-monochromedigital/image-resizer-site}"
 RELEASE_REPO="monochromedigital/image-resizer-releases"
 
 fail() {
@@ -144,6 +145,26 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     print -- "- Source: \`${GITHUB_SHA:-unknown}\`"
     print -- "- Public release: https://github.com/$RELEASE_REPO/releases/tag/$TAG"
   } >> "$GITHUB_STEP_SUMMARY"
+fi
+
+# Tell the website a release happened, so its stated version follows within the minute
+# rather than waiting for that repository's nightly check. Deliberately best-effort: the
+# release is already published and tagged by this point, and a website that is a few
+# hours behind is not a reason to fail a release that succeeded.
+if [[ -n "${SITE_REPO_TOKEN:-}" ]]; then
+  # GH_TOKEN is the release repository's token at this point, which has no access to
+  # the site repository, so the call needs its own.
+  if GH_TOKEN="$SITE_REPO_TOKEN" gh api "repos/$SITE_REPO/dispatches" \
+      --method POST \
+      --field event_type=app-released \
+      --raw-field "client_payload[version]=$VERSION" \
+      --silent 2>/dev/null; then
+    print -- "Notified $SITE_REPO of $VERSION."
+  else
+    print -- "Could not notify $SITE_REPO; its scheduled check will catch up."
+  fi
+else
+  print -- "SITE_REPO_TOKEN is not set; skipping the website notification."
 fi
 
 print -- "Released Image Resizer $VERSION ($BUILD)."
