@@ -90,19 +90,30 @@ struct AltText: Codable, Equatable {
     var minimumConfidence: Double
     var maximumLabels: Int
     var maxLength: Int
+    /// A fact about the batch the author asserts — "Beirut café interior", "product shots
+    /// for the Aurora range". The recogniser names what is in a picture; it cannot know
+    /// what the picture is *for*, and that is what makes alt text worth reading.
+    ///
+    /// It is the only outside fact the phrasing stage may use, and it never becomes alt
+    /// text on its own: an image the recogniser cannot describe stays undescribed rather
+    /// than receiving the batch's context as a caption. Forty photographs sharing one
+    /// sentence would be worse than forty blanks.
+    var context: String
 
     init(
         isEnabled: Bool = false,
         engine: Engine = .automatic,
         minimumConfidence: Double = 0.3,
         maximumLabels: Int = 5,
-        maxLength: Int = 125
+        maxLength: Int = 125,
+        context: String = ""
     ) {
         self.isEnabled = isEnabled
         self.engine = engine
         self.minimumConfidence = minimumConfidence
         self.maximumLabels = maximumLabels
         self.maxLength = maxLength
+        self.context = context
     }
 
     /// Lenient for the same reason `WebExport`'s is — see the note there.
@@ -115,6 +126,7 @@ struct AltText: Codable, Equatable {
             ?? defaults.minimumConfidence
         maximumLabels = try container.decodeIfPresent(Int.self, forKey: .maximumLabels) ?? defaults.maximumLabels
         maxLength = try container.decodeIfPresent(Int.self, forKey: .maxLength) ?? defaults.maxLength
+        context = try container.decodeIfPresent(String.self, forKey: .context) ?? defaults.context
     }
 }
 

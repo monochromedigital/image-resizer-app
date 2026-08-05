@@ -958,6 +958,41 @@ check(AltTextGenerator.tidy("...", maxLength: 125) == nil, "punctuation alone yi
 check(AltTextGenerator.tidy("a wooden chair beside a white wall", maxLength: 16) == "a wooden chair", "truncates on a word boundary")
 check(AltTextGenerator.phrase(from: ["chair", "indoor"]) == "chair, indoor", "labels join into a phrase")
 
+// The prompt. What the model is given — and what it is not — is the whole safety story of
+// this feature, which is why it is assembled here rather than inside the model wrapper.
+check(
+    AltTextGenerator.prompt(labels: ["chair", "indoor"], context: "") == "Labels: chair, indoor",
+    "no context leaves the prompt as it was"
+)
+check(
+    AltTextGenerator.prompt(labels: ["chair"], context: "   ") == "Labels: chair",
+    "whitespace is not context"
+)
+// Labelled as the author's assertion rather than as something observed, so the model
+// cannot treat it as another detection.
+check(
+    AltTextGenerator.prompt(labels: ["chair"], context: "Beirut café interior")
+        == "Labels: chair\nThe author says this about every image in the batch: Beirut café interior",
+    "context is attributed to the author: \(AltTextGenerator.prompt(labels: ["chair"], context: "Beirut café interior"))"
+)
+// A pasted paragraph must not crowd out the labels, which are the only part of the prompt
+// describing this particular image.
+let longContext = String(repeating: "a", count: 400)
+let longPrompt = AltTextGenerator.prompt(labels: ["chair"], context: longContext)
+check(longPrompt.contains(String(repeating: "a", count: 120)), "context survives up to the cap")
+check(!longPrompt.contains(String(repeating: "a", count: 121)), "and is cut off there")
+check(longPrompt.hasPrefix("Labels: chair"), "the labels still lead")
+
+// Context is batch-constant, so it belongs in the preset like the rights fields do.
+guard let contextual = try? JSONDecoder().decode(
+    AltText.self, from: Data("{\"isEnabled\":true,\"context\":\"Aurora range\"}".utf8)
+) else {
+    FileHandle.standardError.write(Data("FAILED: AltText rejects a blob with context\n".utf8))
+    exit(1)
+}
+check(contextual.context == "Aurora range", "context round-trips")
+check(AltText().context.isEmpty, "and defaults to none")
+
 // A suggestion is a description; a title is a name. The description wins for alt text.
 check(
     RightsWriter.resolve(.fromAltText, source: URL(fileURLWithPath: "/a/b.jpg"), humanise: true, altText: "A wooden chair") == "A wooden chair",

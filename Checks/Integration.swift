@@ -654,6 +654,20 @@ struct IntegrationChecks {
             let refused = await AltTextGenerator.generate(for: [photo], settings: demanding)
             precondition(refused[photo] == nil, "a high confidence floor must produce no suggestion, got \(refused)")
 
+            // The guardrail on batch context: an image the recogniser cannot describe must
+            // stay undescribed rather than borrowing the batch's sentence. Forty
+            // photographs sharing one caption would be worse than forty blanks, so the
+            // context must not be able to rescue a refusal.
+            let contextual = AltText(
+                isEnabled: true, engine: .automatic, minimumConfidence: 0.99,
+                context: "Beirut café interior"
+            )
+            let stillRefused = await AltTextGenerator.generate(for: [photo], settings: contextual)
+            precondition(
+                stillRefused[photo] == nil,
+                "context must not become a description on its own, got \(stillRefused)"
+            )
+
             if let suggestion = suggestions[photo] {
                 precondition(!suggestion.isEmpty, "a suggestion must not be empty")
                 precondition(suggestion.count <= altSettings.maxLength, "a suggestion respects its length cap")
