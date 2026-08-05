@@ -245,8 +245,20 @@ Observed in the existing code — match them.
 - **No new third-party dependencies.** Sparkle is the only one, and vendored binaries
   (libwebp) ship under `Vendor/` with their licences.
 
-## In-flight work
+## Web Export
 
-Web Export — a set of features making output web- and SEO-ready. Design is in
-[docs/web-export-preset.md](docs/web-export-preset.md); no implementation has started.
-Read that document before touching preset modelling, filename generation, or metadata.
+All seven features that make output web- and SEO-ready have shipped: slugged filenames,
+the size ladder, AVIF, forced sRGB, IPTC/XMP rights write-back, sidecars, and on-device
+alt text. [docs/web-export-preset.md](docs/web-export-preset.md) is the reference for how
+they are shaped and why — read it before touching preset modelling, filename generation,
+or metadata.
+
+Read its §10 first. That section records where implementation disproved the design, and
+those are the claims most likely to mislead: force-sRGB turned out to be a no-op on the
+ImageIO path and a real bug only on the WebP one, and the alt-text feature was designed
+on a false premise about what the on-device language model can see.
+
+**One piece of that design was never built: `FormatPlan`, the ordered list of output
+formats per run.** `WebExport` has no `formats` property, so a run produces a single
+format, and `SidecarWriter.markup` emits an `<img>` with a `srcset` rather than a
+`<picture>` with format alternatives. The comment above that function marks the spot.
