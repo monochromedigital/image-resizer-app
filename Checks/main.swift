@@ -104,6 +104,90 @@ check(
     ).outputSize == CGSize(width: 500, height: 250),
     "percentage respects no-enlargement"
 )
+// Smart cropping. Where the crop sits is pure geometry, so the part that decides whether
+// a face survives is decidable here; only finding the subject needs Vision.
+// A 4000×2000 source into a 1000×1000 box draws 2000 wide, so 1000px of overhang.
+private let cropOutput = CGSize(width: 1_000, height: 1_000)
+private let cropDrawn = CGSize(width: 2_000, height: 1_000)
+check(
+    ResizeMath.cropOrigin(output: cropOutput, drawn: cropDrawn, focus: nil)
+        == CGPoint(x: -500, y: 0),
+    "no focus point crops from the middle, exactly as before"
+)
+check(
+    ResizeMath.cropOrigin(output: cropOutput, drawn: cropDrawn, focus: CGPoint(x: 0.5, y: 0.5))
+        == CGPoint(x: -500, y: 0),
+    "a subject in the middle is the middle"
+)
+// A subject a quarter in from the left: the crop follows it left.
+check(
+    ResizeMath.cropOrigin(output: cropOutput, drawn: cropDrawn, focus: CGPoint(x: 0.25, y: 0.5))
+        == CGPoint(x: 0, y: 0),
+    "the crop follows the subject"
+)
+// Clamped, or the picture would be pulled off the box and leave a band of background —
+// this is the check that stops a subject near an edge producing a broken image.
+check(
+    ResizeMath.cropOrigin(output: cropOutput, drawn: cropDrawn, focus: CGPoint(x: 0.05, y: 0.5))
+        == CGPoint(x: 0, y: 0),
+    "a subject near the left edge cannot pull the image off the box"
+)
+check(
+    ResizeMath.cropOrigin(output: cropOutput, drawn: cropDrawn, focus: CGPoint(x: 0.95, y: 0.5))
+        == CGPoint(x: -1_000, y: 0),
+    "nor off the right"
+)
+// The axis with no overhang has nowhere to travel.
+check(
+    ResizeMath.cropOrigin(output: cropOutput, drawn: cropDrawn, focus: CGPoint(x: 0.5, y: 0.9)).y == 0,
+    "an axis that already fits does not move"
+)
+// End to end through layout: the focus point reaches the draw rect.
+var focusedSettings = settings(mode: .fill, width: 1_000, height: 1_000)
+focusedSettings.focus = CGPoint(x: 0.25, y: 0.5)
+check(
+    ResizeMath.layout(source: CGSize(width: 4_000, height: 2_000), settings: focusedSettings).drawRect
+        == CGRect(x: 0, y: 0, width: 2_000, height: 1_000),
+    "the focus point reaches the layout"
+)
+// Only cropping modes have anything to anchor.
+var focusedFit = settings(mode: .fit, width: 1_000)
+focusedFit.focus = CGPoint(x: 0.1, y: 0.1)
+check(
+    ResizeMath.layout(source: CGSize(width: 4_000, height: 2_000), settings: focusedFit).drawRect.origin
+        == .zero,
+    "a fit resize ignores a focus point"
+)
+
+// Choosing the point. The union rather than the largest box: a photograph of two people
+// has two salient objects, and anchoring on one crops the other out.
+check(
+    SaliencyFinder.centre(ofBoxes: []) == nil,
+    "no salient object means no opinion, not a centred one"
+)
+// Normalised coordinates are fractions, so these compare within a tolerance — 0.2 + 0.1
+// is not 0.3 in binary floating point, and a check that insists otherwise tests IEEE 754
+// rather than the crop.
+private func near(_ point: CGPoint?, _ x: CGFloat, _ y: CGFloat) -> Bool {
+    guard let point else { return false }
+    return abs(point.x - x) < 0.000_1 && abs(point.y - y) < 0.000_1
+}
+check(
+    near(SaliencyFinder.centre(ofBoxes: [CGRect(x: 0.1, y: 0.2, width: 0.2, height: 0.2)]), 0.2, 0.3),
+    "one object anchors on its middle"
+)
+check(
+    near(SaliencyFinder.centre(ofBoxes: [
+        CGRect(x: 0.0, y: 0.4, width: 0.2, height: 0.2),
+        CGRect(x: 0.6, y: 0.4, width: 0.2, height: 0.2)
+    ]), 0.4, 0.5),
+    "two objects anchor between them"
+)
+check(
+    SaliencyFinder.centre(ofBoxes: [.zero]) == nil,
+    "an empty box is not a subject"
+)
+
 check(
     JobPlanner.relativePath(
         of: URL(fileURLWithPath: "/Photos/Trips/Paris/image.jpg"),

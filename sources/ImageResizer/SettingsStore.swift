@@ -8,6 +8,7 @@ final class SettingsStore: ObservableObject {
     @Published var longEdgeText: String { didSet { save() } }
     @Published var percentageText: String { didSet { save() } }
     @Published var preventEnlargement: Bool { didSet { save() } }
+    @Published var smartCrop: Bool { didSet { save() } }
     @Published var filenameSuffix: String { didSet { save() } }
     @Published var format: OutputFormat { didSet { save() } }
     @Published var quality: Double { didSet { save() } }
@@ -39,6 +40,7 @@ final class SettingsStore: ObservableObject {
         longEdgeText = defaults.string(forKey: "longEdge") ?? "2048"
         percentageText = defaults.string(forKey: "percentage") ?? "50"
         preventEnlargement = defaults.object(forKey: "preventEnlargement") as? Bool ?? true
+        smartCrop = defaults.object(forKey: "smartCrop") as? Bool ?? true
         filenameSuffix = defaults.string(forKey: "filenameSuffix") ?? "-resized"
         let storedFormat = OutputFormat(rawValue: defaults.string(forKey: "format") ?? "") ?? .original
         // A format this Mac cannot write would leave the picker showing an empty
@@ -95,7 +97,8 @@ final class SettingsStore: ObservableObject {
             backgroundBlue: backgroundBlue,
             useCustomDestination: useCustomDestination,
             customDestination: customDestination,
-            webExport: resolvedWebExport
+            webExport: resolvedWebExport,
+            smartCrop: smartCrop
         )
     }
 
@@ -235,6 +238,7 @@ final class SettingsStore: ObservableObject {
         defaults.set(longEdgeText, forKey: "longEdge")
         defaults.set(percentageText, forKey: "percentage")
         defaults.set(preventEnlargement, forKey: "preventEnlargement")
+        defaults.set(smartCrop, forKey: "smartCrop")
         defaults.set(filenameSuffix, forKey: "filenameSuffix")
         defaults.set(format.rawValue, forKey: "format")
         defaults.set(quality, forKey: "quality")

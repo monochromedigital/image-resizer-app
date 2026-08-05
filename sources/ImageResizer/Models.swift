@@ -112,6 +112,15 @@ struct ResizeSettings: Equatable {
     /// Present only while web export is switched on; `nil` means a plain resize.
     /// Defaulted so the memberwise initialiser stays source-compatible.
     var webExport: WebExport? = nil
+    /// Whether a crop should be anchored on the subject rather than the middle.
+    var smartCrop: Bool = false
+    /// Where that subject is, as a fraction of the source with the origin at the bottom
+    /// left — the coordinate space Vision reports in and the one Core Graphics draws in.
+    ///
+    /// Decided per image after planning, because it needs the pixels. It changes where
+    /// the crop sits, never how large the output is, which is why a job can take it on
+    /// after its filename has already been resolved.
+    var focus: CGPoint? = nil
 
     /// Whether a run can start.
     ///
@@ -273,10 +282,7 @@ enum ResizeMath {
                 height: requested.height * outputRatio
             ))
             let drawn = CGSize(width: source.width * scale, height: source.height * scale)
-            let origin = CGPoint(
-                x: (output.width - drawn.width) / 2,
-                y: (output.height - drawn.height) / 2
-            )
+            let origin = cropOrigin(output: output, drawn: drawn, focus: settings.focus)
             return ResizeLayout(outputSize: output, drawRect: CGRect(origin: origin, size: drawn))
 
         case .longEdge:
@@ -296,6 +302,31 @@ enum ResizeMath {
                 preventEnlargement: settings.preventEnlargement
             )
         }
+    }
+
+    /// Where the drawn image sits inside the output box when it is larger than the box.
+    ///
+    /// The middle, unless a focus point says the subject is elsewhere. Clamped so the
+    /// image still covers the box — an anchor near an edge would otherwise pull the
+    /// picture off it and leave a band of background where there is nothing to show.
+    static func cropOrigin(output: CGSize, drawn: CGSize, focus: CGPoint?) -> CGPoint {
+        guard let focus else {
+            return CGPoint(
+                x: (output.width - drawn.width) / 2,
+                y: (output.height - drawn.height) / 2
+            )
+        }
+        // Put the focus point in the middle of the box, then pull it back inside.
+        return CGPoint(
+            x: clamped(output.width / 2 - focus.x * drawn.width, span: output.width - drawn.width),
+            y: clamped(output.height / 2 - focus.y * drawn.height, span: output.height - drawn.height)
+        )
+    }
+
+    /// Holds an origin within the travel available in one axis. `span` is the overhang —
+    /// negative when the image is larger than the box, which is the ordinary case.
+    private static func clamped(_ value: CGFloat, span: CGFloat) -> CGFloat {
+        min(max(value, min(span, 0)), max(span, 0))
     }
 
     private static func proportionalLayout(
@@ -331,6 +362,24 @@ struct ResizeJob {
     /// Travels to the `Rendition` the engine records, which is where it decides whether
     /// this file belongs in a `srcset` or in a meta tag.
     var role: RenditionRole = .responsive
+
+    /// The two things decided after planning, because both need the pixels the planner
+    /// deliberately does not decode. Neither changes the output size or the filename, so
+    /// a job can take them on once its name is already resolved.
+    ///
+    /// Rebuilt rather than mutated so every field has to be accounted for here, in one
+    /// place, instead of at each call site.
+    func adding(altText: String?, focus: CGPoint?) -> ResizeJob {
+        var settings = settings
+        if let focus { settings.focus = focus }
+        return ResizeJob(
+            source: source,
+            output: output,
+            settings: settings,
+            altText: altText ?? self.altText,
+            role: role
+        )
+    }
 }
 
 /// Decides which container type an output is written as.

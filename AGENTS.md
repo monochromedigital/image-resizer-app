@@ -88,6 +88,7 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
 | `RightsWriter.swift` | The only place metadata is *authored*. Builds the IPTC dictionary and the `CGImageMetadata` for XMP-only fields. |
 | `SidecarWriter.swift` | `manifest.json`, `snippet.html`, and inline placeholders, assembled from the renditions a batch recorded. |
 | `AltTextGenerator.swift` | On-device alt text: Vision classifies, the on-device language model phrases. Both stages local. |
+| `SaliencyFinder.swift` | Where the subject is, via Vision's attention saliency, so a crop can be anchored on it. Returns a normalised point or nothing. |
 | `JobPlanner.swift` | Enumerates sources into `[ResizeJob]`, **resolves every output filename**, decides output directory names, skips unreadable files. Touches FileManager and ImageIO. |
 | `ResizeEngine.swift` | The pipeline. `resize(job:)` is the core: open source → pick output type → render frames → write via `CGImageDestination`. Also the serial batch loop, the quality bisection, and `ProcessingControl` (lock-based pause/cancel). |
 | `WebPCodec.swift` | WebP output. ImageIO cannot *write* WebP, so this renders frames to intermediate `.pam` files in a temp dir and shells out to the bundled `img2webp`; `webpmux` copies ICC/EXIF/XMP chunks. |
@@ -106,6 +107,13 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
   no changes for any of them. They compose: formats outermost, rungs within, then one
   share image per source, so a source's files stay contiguous and in the order the markup
   offers them.
+- **Two settings are filled in after planning, not by the planner.** Alt text and the
+  crop focus both need pixels the planner deliberately never decodes, so `ResizeViewModel`
+  runs a pre-pass per *source* — not per job, or a ladder would ask the same question four
+  times — and calls `ResizeJob.adding(altText:focus:)`. Neither affects the output size or
+  the resolved filename, which is why a job can take them on after the fact. Rebuild jobs
+  through that method rather than by hand; constructing a `ResizeJob` inline is how a
+  field like `role` gets silently dropped.
 - **A `Rendition` carries a `RenditionRole`.** `.social` marks the link-preview crop,
   which is a *different picture* rather than a smaller one — it must never reach a
   `srcset`, and `SidecarWriter` splits it out before grouping by format. Anything that

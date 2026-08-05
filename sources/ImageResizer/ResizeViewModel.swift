@@ -103,19 +103,23 @@ final class ResizeViewModel: ObservableObject {
                 // the same question. Suggestions ride along on the job so both the written
                 // metadata and the generated markup can use them.
                 var jobs = jobs
+                let uniqueSources = NSOrderedSet(array: jobs.map(\.source)).array as? [URL] ?? []
+                var suggestions: [URL: String] = [:]
                 if let altSettings = settings.webExport?.altText, altSettings.isEnabled {
-                    let uniqueSources = NSOrderedSet(array: jobs.map(\.source)).array as? [URL] ?? []
-                    let suggestions = await AltTextGenerator.generate(for: uniqueSources, settings: altSettings)
-                    if !suggestions.isEmpty {
-                        jobs = jobs.map {
-                            ResizeJob(
-                                source: $0.source,
-                                output: $0.output,
-                                settings: $0.settings,
-                                altText: suggestions[$0.source],
-                                role: $0.role
-                            )
-                        }
+                    suggestions = await AltTextGenerator.generate(for: uniqueSources, settings: altSettings)
+                }
+                // Only for jobs that actually crop — saliency costs a decode per source
+                // and tells a Fit resize nothing it can use.
+                var focusPoints: [URL: CGPoint] = [:]
+                if settings.smartCrop, jobs.contains(where: { $0.settings.mode == .fill }) {
+                    let cropped = NSOrderedSet(
+                        array: jobs.filter { $0.settings.mode == .fill }.map(\.source)
+                    ).array as? [URL] ?? []
+                    focusPoints = await SaliencyFinder.focusPoints(for: cropped)
+                }
+                if !suggestions.isEmpty || !focusPoints.isEmpty {
+                    jobs = jobs.map {
+                        $0.adding(altText: suggestions[$0.source], focus: focusPoints[$0.source])
                     }
                 }
                 var batch = await ResizeEngine.process(jobs: jobs, skipped: skipped, control: control) { update in

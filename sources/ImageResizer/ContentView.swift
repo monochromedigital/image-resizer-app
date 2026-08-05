@@ -157,6 +157,13 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                 Toggle("Don't enlarge smaller images", isOn: binding(\.preventEnlargement))
                     .toggleStyle(.checkbox)
+                if cropsAnything {
+                    Toggle("Keep the subject in frame when cropping", isOn: binding(\.smartCrop))
+                        .toggleStyle(.checkbox)
+                    Text("Finds what the picture is of and crops around it instead of the middle, on this Mac. Images with no clear subject are cropped from the centre as before.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if model.store.mode == .fit || model.store.mode == .fill {
                     HStack {
                         Menu("Presets") {
@@ -536,6 +543,13 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// Whether anything in this run throws part of the frame away. The link preview does
+    /// even when the resize itself does not, which is where a centre crop is most likely
+    /// to be noticed.
+    private var cropsAnything: Bool {
+        model.store.mode == .fill || model.store.isSocialImageEnabled
     }
 
     private var sidecarLayout: Sidecars.Layout {
