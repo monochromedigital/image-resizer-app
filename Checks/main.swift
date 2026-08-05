@@ -501,4 +501,28 @@ check(
     "no title policy yields an empty alt"
 )
 
+// Alt text. The model-facing parts need a model, but the tidying that guards against its
+// output is pure — and it is what stops a refusal or an over-long reply reaching a file.
+check(AltTextGenerator.tidy("Wooden chair indoors.", maxLength: 125) == "Wooden chair indoors", "a trailing stop is dropped")
+check(AltTextGenerator.tidy("  Drink with straw  ", maxLength: 125) == "Drink with straw", "surrounding space is trimmed")
+check(AltTextGenerator.tidy("\"Sunset beach\"", maxLength: 125) == "Sunset beach", "quotes the model added are stripped")
+check(AltTextGenerator.tidy("UNKNOWN", maxLength: 125) == nil, "the refusal token yields no alt text")
+check(AltTextGenerator.tidy("unknown", maxLength: 125) == nil, "the refusal token is matched case-insensitively")
+check(AltTextGenerator.tidy("", maxLength: 125) == nil, "empty yields no alt text")
+check(AltTextGenerator.tidy("...", maxLength: 125) == nil, "punctuation alone yields no alt text")
+// Truncation stops at a word boundary, so alt text never ends mid-word.
+check(AltTextGenerator.tidy("a wooden chair beside a white wall", maxLength: 16) == "a wooden chair", "truncates on a word boundary")
+check(AltTextGenerator.phrase(from: ["chair", "indoor"]) == "chair, indoor", "labels join into a phrase")
+
+// A suggestion is a description; a title is a name. The description wins for alt text.
+check(
+    RightsWriter.resolve(.fromAltText, source: URL(fileURLWithPath: "/a/b.jpg"), humanise: true, altText: "A wooden chair") == "A wooden chair",
+    "fromAltText uses the suggestion"
+)
+// Declining is not an instruction to erase what the source already carried.
+check(
+    RightsWriter.resolve(.fromAltText, source: URL(fileURLWithPath: "/a/b.jpg"), humanise: true, altText: nil) == nil,
+    "no suggestion leaves the field alone"
+)
+
 print("All Image Resizer checks passed.")

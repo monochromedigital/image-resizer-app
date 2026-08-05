@@ -142,6 +142,9 @@ enum SidecarWriter {
     /// empty `alt` is emitted rather than a guess — an empty alt is a valid declaration
     /// that an image is decorative, whereas a wrong one is worse than none.
     static func altText(for entry: Entry, settings: ResizeSettings) -> String {
+        // A generated suggestion is a description of the picture, which is what alt text
+        // is for. A title is a name for it — better than nothing, but second choice.
+        if let suggestion = entry.renditions.compactMap(\.altText).first { return suggestion }
         guard let rights = settings.webExport?.rights else { return "" }
         return RightsWriter.resolve(rights.titlePolicy, source: entry.source, humanise: true) ?? ""
     }

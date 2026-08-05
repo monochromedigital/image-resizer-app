@@ -98,6 +98,20 @@ final class ResizeViewModel: ObservableObject {
             self.control = control
 
             task = Task {
+                // A pre-pass rather than per-job work: alt text describes a source, and a
+                // ladder turns one source into several jobs that would otherwise each ask
+                // the same question. Suggestions ride along on the job so both the written
+                // metadata and the generated markup can use them.
+                var jobs = jobs
+                if let altSettings = settings.webExport?.altText, altSettings.isEnabled {
+                    let uniqueSources = NSOrderedSet(array: jobs.map(\.source)).array as? [URL] ?? []
+                    let suggestions = await AltTextGenerator.generate(for: uniqueSources, settings: altSettings)
+                    if !suggestions.isEmpty {
+                        jobs = jobs.map {
+                            ResizeJob(source: $0.source, output: $0.output, settings: $0.settings, altText: suggestions[$0.source])
+                        }
+                    }
+                }
                 var batch = await ResizeEngine.process(jobs: jobs, skipped: skipped, control: control) { update in
                     Task { @MainActor in self.progress = update }
                 }

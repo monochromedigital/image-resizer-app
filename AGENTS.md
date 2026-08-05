@@ -48,7 +48,7 @@ See [RELEASING.md](RELEASING.md) for the full release mechanics.
 
 ```
 Package.swift            swift-tools 5.10, macOS 14+, one executable target
-sources/ImageResizer/    all app code, 14 flat files, no subdirectories
+sources/ImageResizer/    all app code, 15 flat files, no subdirectories
 Checks/                  the real test suite (see Testing below)
 Tests/ImageResizerTests/ NOT built — see Testing below
 Scripts/                 check.sh, package.sh, release.sh, ci-release.sh, make-icns.js
@@ -86,6 +86,7 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
 | `SizeLadder.swift` | `expand(_:sourceSize:)`: one `ResizeSettings` in, one per ladder rung out. Pure. |
 | `RightsWriter.swift` | The only place metadata is *authored*. Builds the IPTC dictionary and the `CGImageMetadata` for XMP-only fields. |
 | `SidecarWriter.swift` | `manifest.json`, `snippet.html`, and inline placeholders, assembled from the renditions a batch recorded. |
+| `AltTextGenerator.swift` | On-device alt text: Vision classifies, the on-device language model phrases. Both stages local. |
 | `JobPlanner.swift` | Enumerates sources into `[ResizeJob]`, **resolves every output filename**, decides output directory names, skips unreadable files. Touches FileManager and ImageIO. |
 | `ResizeEngine.swift` | The pipeline. `resize(job:)` is the core: open source → pick output type → render frames → write via `CGImageDestination`. Also the serial batch loop, the quality bisection, and `ProcessingControl` (lock-based pause/cancel). |
 | `WebPCodec.swift` | WebP output. ImageIO cannot *write* WebP, so this renders frames to intermediate `.pam` files in a temp dir and shells out to the bundled `img2webp`; `webpmux` copies ICC/EXIF/XMP chunks. |
@@ -130,6 +131,14 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
   (`kCGImagePropertyGPSDictionary`). There is no metadata *authoring* path. For WebP,
   `removeLocation` instead drops EXIF and XMP wholesale and keeps only ICC.
 - **`ResizeSettings` is `Equatable` but not `Codable`**; `ResizePreset` is `Codable`.
+- **`FoundationModels` is weak-linked.** It does not exist before macOS 26 and the
+  deployment target is 14, so a strong link would stop the app launching on every older
+  system. The toolchain weak-links it automatically given the `@available` annotations;
+  `Package.swift` also says so explicitly. If you touch either, check with
+  `otool -L` that the entry still says `(weak)`.
+- **The on-device language model cannot see images.** Its `Prompt` takes strings only, so
+  alt text is Vision-then-phrase, never one model. Anything that asks it to describe a
+  picture directly is asking for invention.
 - **`ResizeEngine.process` records a `Rendition` per written file**, read back from the
   output's header rather than from what was requested. The sidecars describe files a
   browser will fetch, so they have to match what is on disk. Anything that adds an output
