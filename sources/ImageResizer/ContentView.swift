@@ -451,7 +451,33 @@ struct ContentView: View {
             Toggle("Write a manifest and ready-to-paste markup", isOn: binding(\.areSidecarsEnabled))
             if model.store.areSidecarsEnabled {
                 rightsField("Path prefix", placeholder: "/images", value: sidecar(\.pathPrefix))
-                rightsField("sizes", placeholder: "100vw", value: sidecar(\.sizesAttribute))
+                Picker("Image width", selection: sidecar(\.layout)) {
+                    Text("Full page width").tag(Sidecars.Layout.fullWidth)
+                    Text("Half the page").tag(Sidecars.Layout.half)
+                    Text("A third of the page").tag(Sidecars.Layout.thirds)
+                    Text("A quarter of the page").tag(Sidecars.Layout.quarter)
+                    Text("A fixed column").tag(Sidecars.Layout.fixedWidth)
+                    Text("Custom…").tag(Sidecars.Layout.custom)
+                }
+                .frame(maxWidth: 320)
+                switch sidecarLayout {
+                case .fixedWidth:
+                    HStack {
+                        Text("Column width").frame(width: 108, alignment: .leading)
+                        TextField("800", text: layoutMaxWidthText)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 90)
+                        Text("px").foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                case .custom:
+                    rightsField("sizes", placeholder: "100vw", value: sidecar(\.sizesAttribute))
+                default:
+                    EmptyView()
+                }
+                Text("How wide the image sits on your page. The browser picks a size before the page has a layout, so it can only go by this — “Full page width” on a narrow column makes it fetch the largest file every time. Emitted as sizes=\"\(model.store.webExport.sidecars?.resolvedSizes ?? "100vw")\".")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Picker("Placeholder", selection: sidecar(\.placeholder)) {
                     Text("None").tag(Sidecars.PlaceholderMode.none)
                     Text("Inline blur-up").tag(Sidecars.PlaceholderMode.base64DataURI)
@@ -470,6 +496,26 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var sidecarLayout: Sidecars.Layout {
+        (model.store.webExport.sidecars ?? Sidecars()).layout
+    }
+
+    /// Empty rather than `0` while the field is being cleared, so the placeholder shows
+    /// through instead of a zero the user has to select and type over.
+    private var layoutMaxWidthText: Binding<String> {
+        Binding(
+            get: {
+                let width = (model.store.webExport.sidecars ?? Sidecars()).layoutMaxWidth
+                return width > 0 ? String(width) : ""
+            },
+            set: {
+                var updated = model.store.webExport.sidecars ?? Sidecars()
+                updated.layoutMaxWidth = Int($0.filter(\.isNumber)) ?? 0
+                model.store.webExport.sidecars = updated
+            }
+        )
     }
 
     private func sidecar<Value>(_ keyPath: WritableKeyPath<Sidecars, Value>) -> Binding<Value> {

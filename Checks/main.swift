@@ -254,6 +254,46 @@ guard let sparseSidecars = try? JSONDecoder().decode(Sidecars.self, from: Data("
 }
 check(sparseSidecars.prioritiseFirstImage, "a blob written before the hero existed still prioritises it")
 
+// The sizes attribute. This is the half of a ladder that decides whether it paid off: the
+// browser chooses a rendition before layout exists, so a wrong value spends the savings.
+check(Sidecars(layout: .fullWidth).resolvedSizes == "100vw", "full width is the whole viewport")
+check(
+    Sidecars(layout: .half).resolvedSizes == "(max-width: 700px) 100vw, 50vw",
+    "a half-width image is full width once the columns collapse"
+)
+check(
+    Sidecars(layout: .thirds).resolvedSizes == "(max-width: 700px) 100vw, 33vw",
+    "thirds: \(Sidecars(layout: .thirds).resolvedSizes)"
+)
+check(
+    Sidecars(layout: .fixedWidth, layoutMaxWidth: 640).resolvedSizes
+        == "(max-width: 640px) 100vw, 640px",
+    "a fixed column caps at its own width"
+)
+// A half-typed number must not emit `0px`, which no browser can use.
+check(
+    Sidecars(layout: .fixedWidth, layoutMaxWidth: 0).resolvedSizes == "100vw",
+    "an unset column width falls back rather than emitting zero"
+)
+check(
+    Sidecars(layout: .custom, sizesAttribute: "(min-width: 60em) 24rem, 100vw").resolvedSizes
+        == "(min-width: 60em) 24rem, 100vw",
+    "custom is emitted verbatim"
+)
+// Settings written before layouts existed carry only the typed attribute. The old default
+// means the user never chose; anything else was deliberate and must survive the upgrade.
+guard let migratedDefault = try? JSONDecoder().decode(
+    Sidecars.self, from: Data("{\"sizesAttribute\":\"100vw\"}".utf8)
+), let migratedCustom = try? JSONDecoder().decode(
+    Sidecars.self, from: Data("{\"sizesAttribute\":\"50vw\"}".utf8)
+) else {
+    FileHandle.standardError.write(Data("FAILED: Sidecars rejects a pre-layout blob\n".utf8))
+    exit(1)
+}
+check(migratedDefault.layout == .fullWidth, "an untouched sizes attribute becomes a layout")
+check(migratedCustom.layout == .custom, "a hand-typed sizes attribute is not overwritten")
+check(migratedCustom.resolvedSizes == "50vw", "and it still emits what it emitted before")
+
 // The size ladder. A rung is just ResizeSettings with different numbers, which is what
 // keeps ResizeMath, the render path and the encoders out of this feature entirely.
 private func laddered(
@@ -656,6 +696,17 @@ check(
     "alternatives earn the wrapper: \(picture)"
 )
 check(picture.contains("<source type=\"image/webp\""), "the alternative advertises its media type")
+// Both elements have to agree: a <source> and the <img> describing different widths would
+// have the browser pick against one layout and lay out against another.
+let laidOut = SidecarWriter.markup(
+    for: pictureEntries[0],
+    settings: pictureSettings,
+    sidecars: Sidecars(layout: .thirds, pathPrefix: "/images")
+)
+check(
+    laidOut.components(separatedBy: "sizes=\"(max-width: 700px) 100vw, 33vw\"").count == 3,
+    "the layout reaches both the source and the img: \(laidOut)"
+)
 check(
     picture.contains("srcset=\"/images/cafe-sign-400.webp 400w, /images/cafe-sign-800.webp 800w\""),
     "the source lists its own ladder: \(picture)"
