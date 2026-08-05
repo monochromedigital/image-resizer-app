@@ -407,11 +407,15 @@ struct ContentView: View {
             if model.store.areSidecarsEnabled {
                 rightsField("Path prefix", placeholder: "/images", value: sidecar(\.pathPrefix))
                 rightsField("sizes", placeholder: "100vw", value: sidecar(\.sizesAttribute))
-                Picker("Placeholder", selection: sidecarPlaceholder()) {
+                Picker("Placeholder", selection: sidecar(\.placeholder)) {
                     Text("None").tag(Sidecars.PlaceholderMode.none)
                     Text("Inline blur-up").tag(Sidecars.PlaceholderMode.base64DataURI)
                 }
                 .frame(maxWidth: 320)
+                Toggle("Load the first image first", isOn: sidecar(\.prioritiseFirstImage))
+                Text("The largest image on screen should not wait its turn. The first image of the batch is marked to load immediately; the rest load lazily. Drop your hero image first, or turn this off if none of them is one.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text("manifest.json and snippet.html are written beside the images. Paths use the prefix, so they describe where the files will live rather than where they were written.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -419,23 +423,12 @@ struct ContentView: View {
         }
     }
 
-    private func sidecar(_ keyPath: WritableKeyPath<Sidecars, String>) -> Binding<String> {
+    private func sidecar<Value>(_ keyPath: WritableKeyPath<Sidecars, Value>) -> Binding<Value> {
         Binding(
             get: { (model.store.webExport.sidecars ?? Sidecars())[keyPath: keyPath] },
             set: {
                 var updated = model.store.webExport.sidecars ?? Sidecars()
                 updated[keyPath: keyPath] = $0
-                model.store.webExport.sidecars = updated
-            }
-        )
-    }
-
-    private func sidecarPlaceholder() -> Binding<Sidecars.PlaceholderMode> {
-        Binding(
-            get: { (model.store.webExport.sidecars ?? Sidecars()).placeholder },
-            set: {
-                var updated = model.store.webExport.sidecars ?? Sidecars()
-                updated.placeholder = $0
                 model.store.webExport.sidecars = updated
             }
         )

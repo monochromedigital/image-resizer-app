@@ -132,6 +132,12 @@ struct Sidecars: Codable, Equatable {
     /// Prepended to every path in the manifest and markup, so the output describes where
     /// the files will live rather than where they were written.
     var pathPrefix: String
+    /// Whether the first image of a run is marked up as the one to load first.
+    ///
+    /// Batch order is the only granularity available — the sidebar lists sources and a
+    /// source can be a folder — so this asks the user to drop the hero first rather than
+    /// offering a per-image choice that the source list cannot express.
+    var prioritiseFirstImage: Bool
 
     init(
         manifest: Bool = true,
@@ -139,7 +145,8 @@ struct Sidecars: Codable, Equatable {
         placeholder: PlaceholderMode = .none,
         placeholderWidth: Int = 20,
         sizesAttribute: String = "100vw",
-        pathPrefix: String = ""
+        pathPrefix: String = "",
+        prioritiseFirstImage: Bool = true
     ) {
         self.manifest = manifest
         self.markupSnippet = markupSnippet
@@ -147,6 +154,7 @@ struct Sidecars: Codable, Equatable {
         self.placeholderWidth = placeholderWidth
         self.sizesAttribute = sizesAttribute
         self.pathPrefix = pathPrefix
+        self.prioritiseFirstImage = prioritiseFirstImage
     }
 
     var writesAnything: Bool { manifest || markupSnippet }
@@ -161,6 +169,8 @@ struct Sidecars: Codable, Equatable {
         placeholderWidth = try container.decodeIfPresent(Int.self, forKey: .placeholderWidth) ?? defaults.placeholderWidth
         sizesAttribute = try container.decodeIfPresent(String.self, forKey: .sizesAttribute) ?? defaults.sizesAttribute
         pathPrefix = try container.decodeIfPresent(String.self, forKey: .pathPrefix) ?? defaults.pathPrefix
+        prioritiseFirstImage = try container.decodeIfPresent(Bool.self, forKey: .prioritiseFirstImage)
+            ?? defaults.prioritiseFirstImage
     }
 }
 

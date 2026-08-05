@@ -496,6 +496,9 @@ struct IntegrationChecks {
         let snippet = try String(contentsOf: sidecarOutputs[0].appendingPathComponent("snippet.html"), encoding: .utf8)
         precondition(snippet.contains("srcset=\"/images/cafe-sign-400.jpg 400w, /images/cafe-sign-800.jpg 800w\""), "snippet srcset: \(snippet)")
         precondition(snippet.contains("alt=\"Cafe Sign\""), "snippet alt")
+        // Proves the writer threads the hero through, not just that the markup can express
+        // it: the first image of a run is the one written with priority.
+        precondition(snippet.contains("fetchpriority=\"high\""), "the written snippet prioritises the first image")
         print("Sidecar checks passed.")
 
 
