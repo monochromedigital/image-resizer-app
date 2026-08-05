@@ -28,4 +28,6 @@ jobs:
         env:
           RELEASE_REPO_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          # Optional. Without it the website falls back to its own daily check.
+          SITE_REPO_TOKEN: ${{ secrets.SITE_REPO_TOKEN }}
         run: ./Scripts/ci-release.sh
