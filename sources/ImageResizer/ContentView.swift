@@ -265,6 +265,8 @@ struct ContentView: View {
                     Divider()
                     ladderControls
                     Divider()
+                    formatControls
+                    Divider()
                     colourControls
                     Divider()
                     rightsControls
@@ -324,11 +326,47 @@ struct ContentView: View {
                 }
                 Toggle("Skip sizes larger than the original", isOn: ladder(\.skipUpscales))
                 Toggle("Also keep the original size", isOn: ladder(\.includeOriginalSize))
-                Text(outputCountText)
+            }
+        }
+    }
+
+    private var formatControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Formats")
+                .font(.subheadline.weight(.medium))
+            Toggle("Also write AVIF", isOn: formatAlternative(.avif))
+                .disabled(!OutputFormat.writable.contains(.avif))
+            if !OutputFormat.writable.contains(.avif) {
+                Text("This version of macOS cannot write AVIF.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Toggle("Also write WebP", isOn: formatAlternative(.webp))
+            Text("Each image is written in these formats as well as \(model.store.format.rawValue), and the markup offers them in order so a browser takes the best one it understands.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(outputCountText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
+    }
+
+    /// Membership of the alternative-format list, kept in the order the markup needs
+    /// rather than the order the boxes were ticked.
+    private func formatAlternative(_ format: OutputFormat) -> Binding<Bool> {
+        Binding(
+            get: {
+                model.store.webExport.formats?.alternatives.contains { $0.format == format } ?? false
+            },
+            set: { isOn in
+                var alternatives = model.store.webExport.formats?.alternatives ?? []
+                alternatives.removeAll { $0.format == format }
+                if isOn { alternatives.append(FormatPlan.Entry(format: format)) }
+                model.store.webExport.formats = alternatives.isEmpty
+                    ? nil
+                    : FormatPlan(alternatives: FormatPlan.sorted(alternatives))
+            }
+        )
     }
 
     private var rightsControls: some View {
@@ -513,9 +551,13 @@ struct ContentView: View {
     /// updates as you type. The exact figure appears in the progress bar once planning
     /// has run.
     private var outputCountText: String {
-        let rungs = SizeLadder.expand(model.store.settings, sourceSize: nil).count
-        guard rungs > 1 else { return "One file per image." }
-        return "Up to \(rungs) files per image. Sizes larger than a given original are skipped."
+        let settings = model.store.settings
+        let rungs = SizeLadder.expand(settings, sourceSize: nil).count
+        let formats = FormatMatrix.count(for: settings)
+        let files = rungs * formats
+        guard files > 1 else { return "One file per image." }
+        let multiplied = rungs > 1 && formats > 1 ? " (\(rungs) sizes × \(formats) formats)" : ""
+        return "Up to \(files) files per image\(multiplied). Sizes larger than a given original are skipped."
     }
 
     private func naming<Value>(_ keyPath: WritableKeyPath<Naming, Value>) -> Binding<Value> {

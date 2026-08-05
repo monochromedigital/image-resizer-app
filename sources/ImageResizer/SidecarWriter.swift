@@ -11,15 +11,28 @@ import ImageIO
 enum SidecarWriter {
     /// One source image and every file produced from it.
     struct Entry {
+        /// Every rendition written in one format, sorted by width.
+        struct FormatGroup {
+            let fileExtension: String
+            let renditions: [Rendition]
+        }
+
         let source: URL
         let slug: String
-        let renditions: [Rendition]
+        /// Grouped by format, in the order a browser should try them. The last group is
+        /// the fallback — the format every browser can read — and is what the `<img>`
+        /// points at.
+        let formats: [FormatGroup]
         var placeholder: String?
 
-        /// The rendition a browser falls back to when it cannot read `srcset`. The
-        /// largest is the safest default: a browser old enough to ignore srcset is not
-        /// the one to optimise bytes for.
-        var fallback: Rendition? { renditions.last }
+        /// Flat and width-ordered within each format, which is the order the manifest
+        /// lists them in.
+        var renditions: [Rendition] { formats.flatMap(\.renditions) }
+
+        /// The rendition a browser falls back to when it can read neither `<source>` nor
+        /// `srcset`. The largest is the safest default: a browser old enough to ignore
+        /// srcset is not the one to optimise bytes for.
+        var fallback: Rendition? { formats.last?.renditions.last }
     }
 
     @discardableResult
@@ -80,18 +93,46 @@ enum SidecarWriter {
             if bySource[rendition.source] == nil { order.append(rendition.source) }
             bySource[rendition.source, default: []].append(rendition)
         }
+        // The order the markup offers formats in. Anything written that the plan does not
+        // mention — the fallback, or a format from a run whose settings have since
+        // changed — sorts after, keeping the fallback last where the markup needs it.
+        let preferred = settings.webExport?.formats.map { plan in
+            FormatPlan.sorted(plan.alternatives).compactMap(\.format.preferredExtension)
+        } ?? []
+
         return order.map { source in
             let sorted = (bySource[source] ?? []).sorted { $0.width < $1.width }
             var entry = Entry(
                 source: source,
                 slug: OutputNaming.slug(source.deletingPathExtension().lastPathComponent),
-                renditions: sorted
+                formats: groupByFormat(sorted, preferred: preferred)
             )
-            if sidecars.placeholder == .base64DataURI, let smallest = sorted.first {
+            // From the fallback, because the placeholder is decoded by this app and shown
+            // by every browser — the format chosen for compatibility is the right source.
+            if sidecars.placeholder == .base64DataURI,
+               let smallest = entry.formats.last?.renditions.first {
                 entry.placeholder = placeholderDataURI(for: smallest, width: sidecars.placeholderWidth)
             }
             return entry
         }
+    }
+
+    /// Splits one source's renditions by format, ordered by the plan.
+    static func groupByFormat(_ renditions: [Rendition], preferred: [String]) -> [Entry.FormatGroup] {
+        var order: [String] = []
+        var byFormat: [String: [Rendition]] = [:]
+        for rendition in renditions {
+            let key = rendition.format
+            if byFormat[key] == nil { order.append(key) }
+            byFormat[key, default: []].append(rendition)
+        }
+        let ranked = order.sorted { left, right in
+            let leftRank = preferred.firstIndex(of: left) ?? preferred.count
+            let rightRank = preferred.firstIndex(of: right) ?? preferred.count
+            guard leftRank == rightRank else { return leftRank < rightRank }
+            return (order.firstIndex(of: left) ?? 0) < (order.firstIndex(of: right) ?? 0)
+        }
+        return ranked.map { Entry.FormatGroup(fileExtension: $0, renditions: byFormat[$0] ?? []) }
     }
 
     // MARK: - Manifest
@@ -122,12 +163,12 @@ enum SidecarWriter {
 
     // MARK: - Markup
 
-    /// Emits a plain `<img>` with a `srcset`.
+    /// Emits an `<img>` with a `srcset`, wrapped in a `<picture>` when the run wrote
+    /// alternative formats.
     ///
-    /// A `<picture>` element only earns its wrapper once there are alternative formats to
-    /// choose between; with one format its `<source>` list would be empty and the markup
-    /// would be strictly worse than an `<img>`. Format alternatives are not implemented,
-    /// so this stays an `<img>` until they are.
+    /// A `<picture>` only earns its wrapper once there is something to choose between;
+    /// with one format its `<source>` list would be empty and the markup would be
+    /// strictly worse than a bare `<img>`.
     ///
     /// `isHero` marks the one image a page should load first. Everything else defers.
     static func markup(
@@ -136,10 +177,49 @@ enum SidecarWriter {
         sidecars: Sidecars,
         isHero: Bool = false
     ) -> String {
-        guard let fallback = entry.fallback else { return "" }
-        let srcset = entry.renditions
+        let image = imageElement(for: entry, settings: settings, sidecars: sidecars, isHero: isHero)
+        guard !image.isEmpty else { return "" }
+
+        let alternatives = entry.formats.dropLast().compactMap { group in
+            sourceElement(for: group, sidecars: sidecars)
+        }
+        guard !alternatives.isEmpty else { return image }
+        // Indented as blocks so the nested markup reads as nested once pasted.
+        let blocks = (alternatives + [image])
+            .map { $0.replacingOccurrences(of: "\n", with: "\n  ") }
+        return "<picture>\n  " + blocks.joined(separator: "\n  ") + "\n</picture>"
+    }
+
+    /// One `<source>`: a whole format's ladder, offered ahead of the fallback.
+    ///
+    /// `nil` when the format has no media type to advertise, since a `<source>` without
+    /// one tells the browser nothing it can act on.
+    static func sourceElement(for group: Entry.FormatGroup, sidecars: Sidecars) -> String? {
+        guard let type = OutputType.mimeType(forExtension: group.fileExtension),
+              !group.renditions.isEmpty else { return nil }
+        return """
+            <source type="\(type)"
+                    srcset="\(escape(srcset(group.renditions, sidecars: sidecars)))"
+                    sizes="\(escape(sidecars.sizesAttribute))">
+            """
+    }
+
+    static func srcset(_ renditions: [Rendition], sidecars: Sidecars) -> String {
+        renditions
             .map { "\(path(for: $0, sidecars: sidecars)) \($0.width)w" }
             .joined(separator: ", ")
+    }
+
+    /// The `<img>` every browser understands, built from the fallback format alone — a
+    /// srcset spanning formats would offer a browser files it may not be able to decode.
+    static func imageElement(
+        for entry: Entry,
+        settings: ResizeSettings,
+        sidecars: Sidecars,
+        isHero: Bool
+    ) -> String {
+        guard let group = entry.formats.last, let fallback = group.renditions.last else { return "" }
+        let srcset = srcset(group.renditions, sidecars: sidecars)
 
         var attributes = [
             "src=\"\(escape(path(for: fallback, sidecars: sidecars)))\"",

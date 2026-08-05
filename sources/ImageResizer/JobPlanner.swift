@@ -72,8 +72,8 @@ enum JobPlanner {
         return (jobs, outputs, skipped)
     }
 
-    /// Resolves the jobs one source produces — one per ladder rung, or a single job
-    /// when no ladder applies.
+    /// Resolves the jobs one source produces — one per format per ladder rung, or a
+    /// single job when neither applies.
     ///
     /// Naming happens here rather than during encoding so that every filename in a batch
     /// is known before the first byte is written. That is what makes collisions decidable
@@ -88,33 +88,39 @@ enum JobPlanner {
         settings: ResizeSettings,
         reservations: NameReservations
     ) -> [ResizeJob] {
-        let type = OutputType.resolve(
-            sourceType: probe.sourceType,
-            isRaw: probe.isRaw,
-            format: settings.format
-        )
-        let fileExtension = OutputType.usesWebPCodec(sourceType: probe.sourceType, format: settings.format)
-            ? "webp"
-            : OutputType.fileExtension(for: type, fallback: file.pathExtension)
-
         var base = directory
         if !relativeDirectory.isEmpty {
             base = base.appendingPathComponent(relativeDirectory, isDirectory: true)
         }
 
-        return SizeLadder.expand(settings, sourceSize: probe.pixelSize).map { rung in
-            // The same layout maths the engine will run, so {width} and {height} name the
-            // file after the size it is actually written at rather than the size asked for.
-            let outputSize = probe.pixelSize.map { ResizeMath.layout(source: $0, settings: rung).outputSize }
-            let stem = OutputNaming.stem(
-                source: file,
-                naming: naming,
-                filenameSuffix: rung.filenameSuffix,
-                outputExtension: fileExtension,
-                outputSize: outputSize
+        // Formats outermost so one source's files stay contiguous and in the order the
+        // markup offers them. The extension has to be resolved per format, not once per
+        // source, or every rendition would be named after the fallback.
+        return FormatMatrix.expand(settings).flatMap { formatted -> [ResizeJob] in
+            let type = OutputType.resolve(
+                sourceType: probe.sourceType,
+                isRaw: probe.isRaw,
+                format: formatted.format
             )
-            let requested = base.appendingPathComponent(stem).appendingPathExtension(fileExtension)
-            return ResizeJob(source: file, output: reservations.reserve(requested), settings: rung)
+            let fileExtension = OutputType.usesWebPCodec(sourceType: probe.sourceType, format: formatted.format)
+                ? "webp"
+                : OutputType.fileExtension(for: type, fallback: file.pathExtension)
+
+            return SizeLadder.expand(formatted, sourceSize: probe.pixelSize).map { rung in
+                // The same layout maths the engine will run, so {width} and {height} name
+                // the file after the size it is actually written at rather than the size
+                // asked for.
+                let outputSize = probe.pixelSize.map { ResizeMath.layout(source: $0, settings: rung).outputSize }
+                let stem = OutputNaming.stem(
+                    source: file,
+                    naming: naming,
+                    filenameSuffix: rung.filenameSuffix,
+                    outputExtension: fileExtension,
+                    outputSize: outputSize
+                )
+                let requested = base.appendingPathComponent(stem).appendingPathExtension(fileExtension)
+                return ResizeJob(source: file, output: reservations.reserve(requested), settings: rung)
+            }
         }
     }
 
