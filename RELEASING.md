@@ -1,6 +1,6 @@
 # Releasing Image Resizer
 
-The Swift source is hosted in [`monochromedigital/image-resizer`](https://github.com/monochromedigital/image-resizer). Public binaries and checksums are published to [`monochromedigital/image-resizer-releases`](https://github.com/monochromedigital/image-resizer-releases).
+The Swift source is hosted in [`monochromedigital/image-resizer-app`](https://github.com/monochromedigital/image-resizer-app). Public binaries and checksums are published to [`monochromedigital/image-resizer-releases`](https://github.com/monochromedigital/image-resizer-releases).
 
 ## Prerequisites
 
