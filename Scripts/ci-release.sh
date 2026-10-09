@@ -85,7 +85,7 @@ cp "$DMG" "$PUBLIC_DMG"
 CHECKSUM="$(shasum -a 256 "$PUBLIC_DMG" | awk '{print $1}')"
 print -r -- "$CHECKSUM  ImageResizer.dmg" > "$CHECKSUM_FILE"
 {
-  print -- "Image Resizer $VERSION for Apple Silicon Macs running macOS 14 or newer."
+  print -- "Image Resizer $VERSION for Apple Silicon and Intel Macs running macOS 14 or newer."
   print -- ""
   print -- "Built automatically from source commit \`${GITHUB_SHA:-unknown}\`."
   print -- ""
@@ -116,7 +116,7 @@ grep -q 'sparkle:edSignature=' "$APPCAST_DIR/appcast.xml" || fail "The appcast u
 grep -q "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" "$APPCAST_DIR/appcast.xml" || fail "The appcast version is incorrect."
 
 gh release create "$TAG" \
-  "$PUBLIC_DMG#Image Resizer for Apple Silicon" \
+  "$PUBLIC_DMG#Image Resizer (Universal)" \
   "$CHECKSUM_FILE#SHA-256 checksum" \
   --repo "$RELEASE_REPO" \
   --title "Image Resizer $VERSION" \
