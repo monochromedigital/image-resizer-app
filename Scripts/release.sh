@@ -33,7 +33,7 @@ Options:
 The script:
   1. Validates the repository, version, GitHub access, and clean tracked files.
   2. Increments the build number and runs checks.
-  3. Builds and verifies the Apple Silicon app and DMG.
+  3. Builds and verifies the universal (Apple Silicon and Intel) app and DMG.
   4. Signs the update and generates the public Sparkle appcast.
   5. Commits and tags the source repository.
   6. Publishes the DMG, checksum, and appcast publicly.
@@ -178,7 +178,7 @@ if [[ -n "$NOTES_FILE" ]]; then
 else
   PUBLISH_NOTES="$ARTIFACT_DIR/release-notes.md"
   {
-    print -- "Image Resizer $VERSION for Apple Silicon Macs running macOS 14 or newer."
+    print -- "Image Resizer $VERSION for Apple Silicon and Intel Macs running macOS 14 or newer."
     print -- ""
     print -- "Download \`ImageResizer.dmg\`, open it, and drag Image Resizer into Applications."
     print -- ""
@@ -219,7 +219,7 @@ git push origin main "refs/tags/$TAG"
 
 print -- "Publishing public release..."
 gh release create "$TAG" \
-  "$PUBLIC_DMG#Image Resizer for Apple Silicon" \
+  "$PUBLIC_DMG#Image Resizer (Universal)" \
   "$CHECKSUM_FILE#SHA-256 checksum" \
   --repo "$RELEASE_REPO" \
   --title "Image Resizer $VERSION" \

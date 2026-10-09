@@ -1,6 +1,6 @@
 # Image Resizer
 
-A native Apple Silicon macOS app for resizing large batches of images while preserving their folder structure.
+A native macOS app, universal for Apple Silicon and Intel, for resizing large batches of images while preserving their folder structure.
 
 ![Image Resizer app icon](Resources/AppIcon/ImageResizer-Icon.png)
 
@@ -55,7 +55,7 @@ swift run ImageResizer
 ./Scripts/package.sh
 ```
 
-The packaging script creates `dist/Image Resizer.app` and an unsigned Apple Silicon `dist/Image Resizer.dmg`.
+The packaging script creates `dist/Image Resizer.app` and an unsigned universal (Apple Silicon and Intel) `dist/Image Resizer.dmg`.
 
 ## Release
 

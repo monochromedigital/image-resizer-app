@@ -1,6 +1,6 @@
 # Agent context — Image Resizer
 
-A native Apple Silicon macOS app for batch image resizing. SwiftPM package, no Xcode
+A native macOS app, universal for Apple Silicon and Intel, for batch image resizing. SwiftPM package, no Xcode
 project. Ships to real users as a signed Sparkle update.
 
 Live site: resizer.monochrome.digital
@@ -153,6 +153,12 @@ ImageResizerApp          @main, WindowGroup + Settings scene, Sparkle updater
   system. The toolchain weak-links it automatically given the `@available` annotations;
   `Package.swift` also says so explicitly. If you touch either, check with
   `otool -L` that the entry still says `(weak)`.
+- **The app is universal (arm64 + x86_64).** `package.sh` builds each architecture
+  separately, joins them with `lipo`, and fails if any shipped binary — the app, Sparkle,
+  or the three WebP tools — lacks a slice. The vendored WebP tools are fat binaries: the
+  original arm64 slice plus an x86_64 slice built from the official libwebp 1.6.0 source
+  (static, `minos 14.0`). Replacing them means rebuilding *both* slices. On Intel the
+  on-device language model never exists, so alt text always takes the Vision-only path.
 - **The on-device language model cannot see images.** Its `Prompt` takes strings only, so
   alt text is Vision-then-phrase, never one model. Anything that asks it to describe a
   picture directly is asking for invention.
@@ -179,7 +185,7 @@ swift run ImageResizer
 ./Scripts/package.sh
 ```
 
-`package.sh` produces `dist/Image Resizer.app` and an unsigned Apple Silicon
+`package.sh` produces `dist/Image Resizer.app` and an unsigned universal
 `dist/Image Resizer.dmg`.
 
 ### Testing
